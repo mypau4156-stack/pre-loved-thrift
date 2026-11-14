@@ -100,13 +100,13 @@
           <div class="panel-title"><div><span class="eyebrow">LIST A NEW FIND</span><h2>Add a product</h2></div></div>
           <form class="product-form" @submit.prevent="addProduct">
             <label>Product name<input v-model.trim="form.name" required maxlength="80" placeholder="e.g. Vintage denim jacket" /></label>
-            <label>Category<select v-model="form.category"><option v-for="category in categories" :key="category" :value="category">{{ category }}</option></select></label>
-            <label>Type<select v-model="form.type"><option>Clothing</option><option>Accessories</option><option>Shoes</option><option>Bag</option></select></label>
+            <label>Category<select v-model="form.category" @change="form.type = defaultProductType(form.category)"><option v-for="category in categories" :key="category" :value="category">{{ category }}</option></select></label>
+            <label>Type<select v-model="form.type"><option value="Clothing">Clothing (auto-detect)</option><option value="Top">Top</option><option value="Bottom">Bottom</option><option value="Dress">Dress</option><option>Shoes</option><option>Accessories</option><option>Bag</option></select></label>
             <label>Price (₱)<input v-model.number="form.price" type="number" min="1" step="1" required /></label>
             <label>Stock<input v-model.number="form.stock" type="number" min="0" step="1" required /></label>
             <label>Reorder point<input v-model.number="form.reorderPoint" type="number" min="0" step="1" required /></label>
             <label>Colour<input v-model.trim="form.color" maxlength="40" placeholder="Optional" /></label>
-            <label class="photo-field">Photo<input type="file" accept="image/*" @change="readPhoto" /></label>
+            <label class="photo-field">Photo (saved as transparent PNG)<input type="file" accept="image/png,image/jpeg,image/webp" @change="readPhoto" /></label>
             <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
             <button class="primary-button submit-button" type="submit"><ion-icon :icon="addOutline" /> Add product</button>
           </form>
@@ -117,17 +117,18 @@
           <p v-if="inventoryError" class="form-error inventory-error" role="alert">{{ inventoryError }}</p>
           <div class="table-wrap">
             <table class="inventory-table">
-              <thead><tr><th>Product</th><th>Price</th><th>Stock</th><th>Reorder at</th><th>Auto-reorder</th><th></th></tr></thead>
+              <thead><tr><th>Product</th><th>Type</th><th>Price</th><th>Stock</th><th>Reorder at</th><th>Auto-reorder</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="product in filteredInventory" :key="product.id">
                   <td><div class="inventory-product"><img :src="product.img || fallbackImage" :alt="product.name" /><div><b>{{ product.name }}</b><small>{{ product.category }} · {{ product.sold }} sold</small></div></div></td>
+                  <td><select v-model="product.type" :aria-label="`Garment type for ${product.name}`" @change="saveInventory(product)"><option value="Clothing">Clothing (auto-detect)</option><option value="Top">Top</option><option value="Bottom">Bottom</option><option value="Dress">Dress</option><option value="Shoes">Shoes</option><option value="Accessories">Accessories</option><option value="Bag">Bag</option></select></td>
                   <td><label class="table-input"><span>₱</span><input v-model.number="product.price" type="number" min="1" step="1" aria-label="Product price" @change="saveInventory(product)" /></label></td>
                   <td><input v-model.number="product.stock" class="number-input" type="number" min="0" aria-label="Stock quantity" @change="saveInventory(product)" /></td>
                   <td><input v-model.number="product.reorderPoint" class="number-input" type="number" min="0" aria-label="Reorder point" @change="saveInventory(product)" /></td>
                   <td><label class="switch"><input :checked="product.autoReorder" type="checkbox" :aria-label="`Auto-reorder ${product.name}`" @change="toggleAutoReorder(product, $event)" /><span></span></label></td>
                   <td><button class="icon-button danger" :aria-label="`Delete ${product.name}`" @click="deleteProduct(product.id)"><ion-icon :icon="trashOutline" /></button></td>
                 </tr>
-                <tr v-if="!filteredInventory.length"><td colspan="6" class="empty-cell">No products match your search.</td></tr>
+                <tr v-if="!filteredInventory.length"><td colspan="7" class="empty-cell">No products match your search.</td></tr>
               </tbody>
             </table>
           </div>
@@ -251,10 +252,78 @@
               <p v-if="profileError" class="form-error" role="alert">{{ profileError }}</p>
               <button class="primary-button submit-button" type="submit">Save profile</button>
             </form>
+            <ChangePasswordForm />
           </section>
         </template>
       </main>
     </div>
+
+    <aside v-if="messengerOpen" class="seller-messenger" aria-label="Seller message inbox">
+      <header class="seller-messenger-header">
+        <img src="/assets/logo-emblem.png" alt="" />
+        <div><b>Messages</b></div>
+        <button type="button" aria-label="Close messages" @click="messengerOpen = false">×</button>
+      </header>
+      <div class="seller-messenger-body">
+        <p v-if="storeChatError" class="form-error" role="alert">{{ storeChatError }}</p>
+        <article v-for="conversation in storeChats" :key="conversation.id" class="messenger-conversation">
+          <div class="messenger-conversation-heading"><b>Buyer · {{ conversation.buyerName }}</b></div>
+          <div v-if="conversation.messages.length" class="inbox-message-list">
+            <div v-for="message in conversation.messages" :key="message.id"
+              class="inbox-message" :class="{ own: message.senderRole === 'seller' }">
+              <b v-if="message.senderRole === 'seller'">You</b>
+              <p>{{ message.text }}</p><small>{{ formatTime(message.sentAt) }}</small>
+            </div>
+          </div>
+          <p v-else class="empty-note">No messages in this conversation yet.</p>
+          <form class="inbox-reply" @submit.prevent="replyToStoreChat(conversation.id)">
+            <input v-model="storeChatDrafts[conversation.id]" maxlength="500" placeholder="Reply to buyer…" :aria-label="`Reply to ${conversation.buyerName}`" />
+            <button type="submit" :disabled="!storeChatDrafts[conversation.id]?.trim()">Send</button>
+          </form>
+        </article>
+        <article v-for="order in sellerMessageOrders" :key="order.id" class="messenger-conversation">
+          <div class="messenger-conversation-heading"><b>Buyer · {{ order.buyer || order.customerName || 'Buyer' }}</b><small>Order {{ order.id }}</small></div>
+          <section v-if="order.messages?.some((message) => message.channel === 'buyer-seller')" class="inbox-thread">
+            <h3>Buyer</h3>
+            <div class="inbox-message-list">
+              <div v-for="(message, index) in order.messages.filter((item) => item.channel === 'buyer-seller')" :key="`${message.sentAt}-${index}`"
+                class="inbox-message" :class="{ own: message.sender === 'seller' }">
+                <b v-if="message.sender === 'seller'">You</b>
+                <p>{{ message.text }}</p><small>{{ formatTime(message.sentAt) }}</small>
+              </div>
+            </div>
+            <form class="inbox-reply" @submit.prevent="replyToOrder(order, 'buyer-seller')">
+              <input v-model="sellerMessageDrafts[`${order.id}:buyer-seller`]" maxlength="500" placeholder="Reply to buyer…" :aria-label="`Reply to buyer about ${order.id}`" />
+              <button type="submit" :disabled="!sellerMessageDrafts[`${order.id}:buyer-seller`]?.trim()">Send</button>
+            </form>
+          </section>
+          <section v-if="order.messages?.some((message) => message.channel === 'rider-seller')" class="inbox-thread">
+            <h3>Rider <small>{{ order.rider || 'Assigned rider' }}</small></h3>
+            <div class="inbox-message-list">
+              <div v-for="(message, index) in order.messages.filter((item) => item.channel === 'rider-seller')" :key="`${message.sentAt}-${index}`"
+                class="inbox-message" :class="{ own: message.sender === 'seller' }">
+                <b>{{ message.sender === 'seller' ? 'You' : order.rider || 'Rider' }}</b>
+                <p>{{ message.text }}</p><small>{{ formatTime(message.sentAt) }}</small>
+              </div>
+            </div>
+            <form class="inbox-reply" @submit.prevent="replyToOrder(order, 'rider-seller')">
+              <input v-model="sellerMessageDrafts[`${order.id}:rider-seller`]" maxlength="500" placeholder="Reply to rider…" :aria-label="`Reply to rider about ${order.id}`" />
+              <button type="submit" :disabled="!sellerMessageDrafts[`${order.id}:rider-seller`]?.trim()">Send</button>
+            </form>
+          </section>
+        </article>
+        <div v-if="!sellerMessageOrders.length && !storeChats.length && !storeChatError" class="messenger-empty">
+          <ion-icon :icon="chatbubbleOutline" /><b>No conversations yet</b><p>Buyer and rider messages will show here.</p>
+        </div>
+      </div>
+    </aside>
+    <button class="seller-messenger-launcher" type="button" :aria-expanded="messengerOpen"
+      :aria-label="messengerOpen ? 'Close messages' : `Open messages${sellerInboxCount ? `, ${sellerInboxCount} new` : ''}`"
+      @click="messengerOpen = !messengerOpen">
+      <ion-icon :icon="messengerOpen ? closeOutline : chatbubbleOutline" />
+      <span>{{ messengerOpen ? 'Close' : 'Messages' }}</span>
+      <small v-if="sellerInboxCount">{{ sellerInboxCount }}</small>
+    </button>
 
     <div v-if="reviewPhotoOpen" class="seller-review-photo-overlay" role="dialog" aria-modal="true" aria-label="Review photo preview" @click.self="closeReviewPhoto">
       <div class="seller-review-photo-viewer">
@@ -263,20 +332,9 @@
       </div>
     </div>
 
-    <div v-if="logoutConfirmationOpen" class="seller-logout-backdrop" role="presentation" @click.self="logoutConfirmationOpen = false">
-      <section class="seller-logout-dialog" role="alertdialog" aria-modal="true" aria-labelledby="seller-logout-title" aria-describedby="seller-logout-description">
-        <div class="seller-logout-sign"><ion-icon :icon="logOutOutline" /></div>
-        <span class="seller-logout-eyebrow">YOUR SELLER SESSION</span>
-        <h2 id="seller-logout-title">Leaving your shop?</h2>
-        <p id="seller-logout-description">Are you sure you want to log out of your seller account?</p>
-        <div class="seller-logout-actions">
-          <button type="button" class="seller-logout-cancel" @click="logoutConfirmationOpen = false">Stay here</button>
-          <button type="button" class="seller-logout-confirm" @click="logoutConfirmationOpen = false; $emit('logout')">
-            <ion-icon :icon="logOutOutline" /> Log out
-          </button>
-        </div>
-      </section>
-    </div>
+    <LogoutConfirmation :open="logoutConfirmationOpen" account-type="seller"
+      @cancel="logoutConfirmationOpen = false"
+      @confirm="logoutConfirmationOpen = false; $emit('logout')" />
 
     <div v-if="reorderPopupOpen" class="reorder-popup-backdrop" role="presentation" @click.self="dismissReorderPopup">
       <section class="reorder-popup" role="alertdialog" aria-modal="true" aria-labelledby="reorder-popup-title">
@@ -306,15 +364,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { IonIcon, alertController } from '@ionic/vue'
+import ChangePasswordForm from './ChangePasswordForm.vue'
 import {
-  addOutline, alertCircleOutline, checkmarkCircleOutline, cubeOutline, gridOutline,
+  addOutline, alertCircleOutline, chatbubbleOutline, checkmarkCircleOutline, closeOutline, cubeOutline, gridOutline,
   logOutOutline, personOutline, receiptOutline, refreshOutline, searchOutline, starOutline,
   trashOutline, trendingDownOutline, trendingUpOutline, walletOutline
 } from 'ionicons/icons'
-import { categories as shopCategories, type CartItem, type SellerOrderRecord } from '../data/mockData'
+import { categories as shopCategories, getProductSlot, type CartItem, type GarmentImageFit, type OrderMessage, type SellerOrderRecord } from '../data/mockData'
 import { formatPeso } from '../utils/currency'
+import { prepareProductImage } from '../utils/productImage'
+import LogoutConfirmation from './LogoutConfirmation.vue'
 import { profileToUser, updateMyProfile } from '../services/auth'
 import {
   addActivityRecord,
@@ -331,6 +392,8 @@ import {
   type InventoryProduct
 } from '../services/seller'
 import { listSellerProductReviews, type ProductReview } from '../services/reviews'
+import { listSellerStoreChats, sendStoreChatMessage, type StoreChatConversation } from '../services/storeChat'
+import { supabase } from '../utils/supabase'
 import type { AppUser, RiderSummary } from '../types/database'
 
 type RiderAccount = RiderSummary
@@ -340,10 +403,17 @@ const emit = defineEmits<{
   (event: 'profile-update', user: { name: string; email: string; phone?: string; address?: string; avatar?: string }): void
   (event: 'status-change', id: string, status: string): void
   (event: 'rider-change', id: string, rider: RiderAccount): void
+  (event: 'message', id: string, message: OrderMessage): void
 }>()
 const fallbackImage = '/assets/category-1.png'
 const tab = ref('inventory')
+const messengerOpen = ref(false)
 const reorderPopupOpen = ref(false)
+const sellerMessageDrafts = reactive<Record<string, string>>({})
+const storeChatDrafts = reactive<Record<string, string>>({})
+const storeChats = ref<StoreChatConversation[]>([])
+const storeChatError = ref('')
+let stopStoreChatSubscription: (() => void) | undefined
 const logoutConfirmationOpen = ref(false)
 const accountMenuOpen = ref(false)
 const profilePhotoInput = ref<HTMLInputElement | null>(null)
@@ -371,6 +441,7 @@ const reorderRequestNotice = ref('')
 const restockRequestsInProgress = ref<string[]>([])
 const formError = ref('')
 const photo = ref('')
+const photoFit = ref<GarmentImageFit>()
 const reorderRequests = ref<ReorderRequest[]>([])
 const automationLog = ref<ActivityEntry[]>([])
 const categories = shopCategories.map((category) => category.name)
@@ -383,8 +454,23 @@ const navItems = [
   { id: 'payments', label: 'Payments & automation', icon: walletOutline },
   { id: 'profile', label: 'Profile', icon: personOutline }
 ]
-const form = reactive({ name: '', category: categories[0], type: 'Clothing', price: 0, stock: 0, reorderPoint: 3, color: '' })
+const form = reactive({ name: '', category: categories[0], type: 'Dress', price: 0, stock: 0, reorderPoint: 3, color: '' })
+
+function defaultProductType(category: string) {
+  if (/dress/i.test(category)) return 'Dress'
+  if (/top|t-shirt/i.test(category)) return 'Top'
+  if (/denim|bottom/i.test(category)) return 'Bottom'
+  if (/shoe|footwear/i.test(category)) return 'Shoes'
+  if (/bag|accessor/i.test(category)) return 'Bag'
+  return 'Top'
+}
 const orders = computed(() => props.orders)
+const sellerMessageOrders = computed(() => orders.value.filter((order) =>
+  order.messages?.some((message) => message.channel === 'buyer-seller' || message.channel === 'rider-seller')))
+const sellerInboxCount = computed(() => orders.value.reduce((total, order) =>
+  total + (order.messages?.filter((message) => message.sender !== 'seller'
+    && (message.channel === 'buyer-seller' || message.channel === 'rider-seller')).length ?? 0), 0)
+  + storeChats.value.reduce((total, conversation) => total + conversation.messages.filter(message => message.senderRole === 'buyer').length, 0))
 const averageReviewRating = computed(() => productReviews.value.length
   ? productReviews.value.reduce((sum, review) => sum + review.rating, 0) / productReviews.value.length
   : 0)
@@ -504,11 +590,22 @@ const OrdersTable = defineComponent({
 })
 
 onMounted(async () => {
-  await Promise.all([loadInventory(), loadActivity()])
+  await Promise.all([loadInventory(), loadActivity(), loadStoreChats()])
+  if (supabase) {
+    const client = supabase
+    const channel = client.channel(`seller-store-chat-${props.user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'buyer_seller_messages' }, () => {
+        void loadStoreChats()
+      })
+      .subscribe()
+    stopStoreChatSubscription = () => { void client.removeChannel(channel) }
+  }
   await showReorderAlert()
   await loadReorderRequests()
   await loadReviews()
 })
+
+onUnmounted(() => stopStoreChatSubscription?.())
 
 async function showReorderAlert() {
   if (!lowStock.value.length) return
@@ -564,6 +661,28 @@ async function loadReviews() {
   } catch (error) {
     console.error('Unable to load seller product reviews.', error)
     reviewsError.value = 'Customer reviews could not be loaded. Please try again later.'
+  }
+}
+
+async function loadStoreChats() {
+  try {
+    storeChats.value = await listSellerStoreChats()
+    storeChatError.value = ''
+  } catch (error) {
+    console.error('Unable to load storefront conversations.', error)
+    storeChatError.value = error instanceof Error ? error.message : 'Storefront conversations could not be loaded.'
+  }
+}
+
+async function replyToStoreChat(conversationId: string) {
+  const text = storeChatDrafts[conversationId]?.trim()
+  if (!text) return
+  try {
+    await sendStoreChatMessage(conversationId, props.user.id, 'seller', text)
+    storeChatDrafts[conversationId] = ''
+    await loadStoreChats()
+  } catch (error) {
+    storeChatError.value = error instanceof Error ? error.message : 'Unable to send your reply.'
   }
 }
 
@@ -629,6 +748,13 @@ function updateOrderRider(id: string, rider: RiderAccount) {
   emit('rider-change', id, rider)
   void addActivity('Delivery rider assigned', `${rider.name} was assigned to ${id}.`)
 }
+function replyToOrder(order: SellerOrderRecord, channel: 'buyer-seller' | 'rider-seller') {
+  const key = `${order.id}:${channel}`
+  const text = sellerMessageDrafts[key]?.trim()
+  if (!text) return
+  emit('message', order.id, { sender: 'seller', channel, text, sentAt: new Date().toISOString() })
+  sellerMessageDrafts[key] = ''
+}
 
 const hasPendingReorderRequest = (productId: string) =>
   activeReorderRequests.value.some((request) => request.productId === productId)
@@ -656,8 +782,11 @@ async function requestRestock(product: InventoryProduct) {
 
 async function saveInventory(product: InventoryProduct) {
   inventoryError.value = ''
+  product.slot = getProductSlot({ name: product.name, cat: product.category, type: product.type })
   try {
     await updateSellerProduct(product.id, {
+      type: product.type,
+      slot: product.slot,
       price: product.price,
       stock: product.stock,
       reorderPoint: product.reorderPoint,
@@ -720,6 +849,10 @@ async function addProduct() {
     formError.value = 'Enter a name, a price above zero, and valid stock values.'
     return
   }
+  if (getProductSlot({ name: form.name, cat: form.category || categories[0], type: form.type }) && (!photo.value || !photoFit.value)) {
+    formError.value = 'Upload a product photo so it can be fitted correctly in the Outfit Builder.'
+    return
+  }
 
   try {
     const created = await createSellerProduct(props.user.id, {
@@ -730,12 +863,14 @@ async function addProduct() {
       stock: form.stock,
       reorderPoint: form.reorderPoint,
       color: form.color,
-      image: photo.value || fallbackImage
+      image: photo.value || fallbackImage,
+      fit: photoFit.value
     })
     inventory.value.unshift(created)
     await addActivity('Product added', `${form.name} was added to inventory.`)
     Object.assign(form, { name: '', price: 0, stock: 0, reorderPoint: 3, color: '' })
     photo.value = ''
+    photoFit.value = undefined
     const fileInput = document.querySelector<HTMLInputElement>('.photo-field input')
     if (fileInput) fileInput.value = ''
   } catch (error) {
@@ -777,24 +912,27 @@ async function addActivity(title: string, detail: string) {
   }
 }
 
-function readPhoto(event: Event) {
+async function readPhoto(event: Event) {
+  formError.value = ''
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return
-  if (!file.type.startsWith('image/')) {
-    formError.value = 'Choose a valid image file.'
+  photo.value = ''
+  photoFit.value = undefined
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    formError.value = 'Choose a PNG, JPG, or WebP product image.'
     return
   }
   if (file.size > 2 * 1024 * 1024) {
     formError.value = 'Product images must be smaller than 2 MB.'
     return
   }
-  const reader = new FileReader()
-  reader.onload = () => {
-    if (typeof reader.result === 'string') photo.value = reader.result
-    else formError.value = 'Unable to read the selected image.'
+  try {
+    const prepared = await prepareProductImage(file)
+    photo.value = prepared.dataUrl
+    photoFit.value = prepared.fit
+  } catch (error) {
+    formError.value = error instanceof Error ? error.message : 'Unable to convert the product image to PNG.'
   }
-  reader.onerror = () => { formError.value = 'Unable to read the selected image.' }
-  reader.readAsDataURL(file)
 }
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -846,6 +984,38 @@ function formatTime(value: string) {
 .page-title { min-height: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 1px solid #f0d8d4; border-radius: 18px; background: linear-gradient(120deg, #fff1ed, #f8e3df 58%, #f6e8e2); }
 .page-title h1 { margin: 6px 0 5px; color: #3e2e2a; font: 700 28px var(--font-head); }
 .page-title p { margin: 0; max-width: 640px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.seller-messenger { position: fixed; right: 22px; bottom: 88px; z-index: 1100; width: min(410px, calc(100vw - 28px)); height: min(650px, calc(100vh - 120px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #f0e6e0; border-radius: 20px; background: #fbf9f6; box-shadow: 0 20px 60px #39231f35; }
+.seller-messenger-header { min-height: 68px; padding: 10px 14px; display: flex; align-items: center; gap: 11px; background: linear-gradient(135deg, #e47a7a, #c45f5f); color: #fff; }
+.seller-messenger-header img { width: 42px; height: 42px; border: 2px solid #ffffffa8; border-radius: 50%; background: #fbf9f6; object-fit: cover; object-position: center 26%; }
+.seller-messenger-header > div { flex: 1; display: grid; gap: 3px; }
+.seller-messenger-header b { font-size: 14px; }
+.seller-messenger-header small { font-size: 10px; opacity: .9; }
+.seller-messenger-header button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #ffffff33; color: #fff; cursor: pointer; font-size: 24px; }
+.seller-messenger-body { min-height: 0; flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.messenger-conversation { min-width: 0; min-height: 0; flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 10px; border: 1px solid #f0e6e0; border-radius: 14px; background: #fff; }
+.messenger-conversation-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 9px; border-bottom: 1px solid #f0e6e0; }
+.messenger-conversation-heading b { overflow: hidden; color: #493832; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.messenger-conversation-heading small { flex: 0 0 auto; color: #927d75; font-size: 9px; }
+.messenger-empty { min-height: 190px; display: grid; align-content: center; justify-items: center; gap: 8px; color: #8d7b74; text-align: center; }
+.messenger-empty ion-icon { color: var(--coral); font-size: 30px; }
+.messenger-empty b { color: #493832; font-size: 13px; }
+.messenger-empty p { margin: 0; font-size: 11px; }
+.seller-messenger-launcher { position: fixed; right: 22px; bottom: 20px; z-index: 1101; min-height: 52px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 0; border-radius: 999px; background: var(--coral); color: #fff; box-shadow: 0 10px 28px #43231e3d; cursor: pointer; font: 700 13px var(--font-body); }
+.seller-messenger-launcher ion-icon { font-size: 19px; }
+.seller-messenger-launcher small { min-width: 20px; padding: 3px 6px; border-radius: 12px; background: #fff; color: var(--coral-dark); text-align: center; font-size: 10px; font-weight: 800; }
+.inbox-thread { display: grid; gap: 10px; padding-top: 14px; }
+.inbox-thread + .inbox-thread { margin-top: 14px; border-top: 1px solid #f0e6e0; }
+.inbox-thread h3 { margin: 0; color: #493832; font-size: 12px; }
+.inbox-thread h3 small { margin-left: 5px; color: var(--muted); font-weight: 500; }
+.inbox-message-list { min-height: 90px; max-height: none; flex: 1; overflow-y: auto; display: grid; align-content: start; gap: 8px; }
+.inbox-message { width: fit-content; max-width: 86%; padding: 9px 11px; border-radius: 12px 12px 12px 3px; background: #f7efe9; }
+.inbox-message.own { justify-self: end; border-radius: 12px 12px 3px 12px; background: #f9e2df; }
+.inbox-message b, .inbox-message small { color: #927d75; font-size: 9px; }
+.inbox-message p { margin: 4px 0; color: #493832; font-size: 11px; overflow-wrap: anywhere; }
+.inbox-reply { display: flex; gap: 8px; }
+.inbox-reply input { min-width: 0; min-height: 38px; flex: 1; padding: 0 11px; border: 1px solid #eadfd9; border-radius: 10px; outline: none; font: 12px var(--font-body); }
+.inbox-reply button { padding: 0 14px; border: 0; border-radius: 10px; background: var(--coral); color: #fff; cursor: pointer; font: 700 11px var(--font-body); }
+.inbox-reply button:disabled { opacity: .5; cursor: not-allowed; }
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .metrics article, .payment-stats article { min-width: 0; padding: 17px; display: grid; align-content: center; gap: 6px; border: 1px solid #f0e6e0; border-radius: 18px; background: #fff; }
 .metrics article { min-height: 105px; }
@@ -856,6 +1026,7 @@ function formatTime(value: string) {
 .overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .panel { min-width: 0; padding: 20px; }
 .seller-profile-panel { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: start; gap: 28px; }
+.seller-profile-panel > :deep(.password-panel) { grid-column: 1 / -1; margin-top: 0; }
 .seller-profile-photo { display: grid; justify-items: center; gap: 10px; padding: 10px 0; }
 .seller-profile-avatar { width: 116px; height: 116px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #f9e2df; color: var(--coral-dark); font: 700 42px var(--font-head); }
 .seller-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -896,18 +1067,6 @@ function formatTime(value: string) {
 .seller-review-photo-viewer { position: relative; box-sizing: border-box; width: min(86vw, 560px); height: min(78vh, 560px); overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(0, 0, 0, .35); }
 .seller-review-photo-viewer > img { position: absolute; inset: 16px; display: block; width: calc(100% - 32px); height: calc(100% - 32px); object-fit: contain; }
 .seller-review-photo-close { position: absolute; top: 8px; right: 8px; z-index: 1; width: 34px; height: 34px; border: 0; border-radius: 50%; background: #fff2ee; color: var(--ink); cursor: pointer; font-size: 24px; line-height: 1; }
-.seller-logout-backdrop { position: fixed; inset: 0; z-index: 1101; display: grid; place-items: center; padding: 20px; background: rgba(48, 36, 34, .52); backdrop-filter: blur(5px); }
-.seller-logout-dialog { position: relative; box-sizing: border-box; width: min(100%, 430px); padding: 28px; overflow: hidden; border: 1px solid #fff; border-radius: 26px; background: linear-gradient(160deg, #fffaf7 0%, #fff 62%); box-shadow: 0 24px 70px rgba(52, 33, 29, .28); animation: reorder-popup-in .24s ease-out; }
-.seller-logout-dialog::before { position: absolute; inset: 0 0 auto; height: 6px; background: linear-gradient(90deg, #e9947e, #d86464, #e8ad74); content: ''; }
-.seller-logout-sign { width: 58px; height: 58px; margin-bottom: 15px; display: grid; place-items: center; border: 1px solid #f4d0c6; border-radius: 19px; background: linear-gradient(145deg, #fff0eb, #ffe2d8); color: #c85f56; box-shadow: 0 8px 18px rgba(200, 95, 86, .13); }
-.seller-logout-sign ion-icon { font-size: 29px; }
-.seller-logout-eyebrow { color: #b2786b; font-size: 9px; font-weight: 800; letter-spacing: .16em; }
-.seller-logout-dialog h2 { margin: 6px 0 7px; color: #493832; font: 700 25px/1.2 var(--font-head); }
-.seller-logout-dialog p { margin: 0; color: #85736d; font-size: 12px; line-height: 1.6; }
-.seller-logout-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
-.seller-logout-actions button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 17px; border-radius: 999px; cursor: pointer; font: 700 11px var(--font-body); }
-.seller-logout-cancel { border: 1px solid #eadbd4; background: #fff; color: #806d65; }
-.seller-logout-confirm { border: 1px solid #cf625b; background: linear-gradient(135deg, #df7970, #c95c59); color: #fff; box-shadow: 0 7px 15px rgba(201, 92, 89, .22); }
 .sales-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 4px 0 14px; padding: 11px 12px; border: 1px solid #f1e4dd; border-radius: 13px; background: linear-gradient(110deg, #fff8f5, #fff); }
 .sales-summary div { display: grid; gap: 4px; }
 .sales-summary small { color: var(--muted); font-size: 9px; }
@@ -1070,15 +1229,14 @@ function formatTime(value: string) {
   :deep(.orders-table) { min-width: 0; }
 }
 @media (max-width: 620px) {
+  .seller-messenger { right: 12px; bottom: 76px; width: calc(100vw - 24px); height: min(600px, calc(100vh - 98px)); border-radius: 17px; }
+  .seller-messenger-launcher { right: 14px; bottom: 14px; min-height: 48px; }
   .alert-row { grid-template-columns: 42px minmax(0, 1fr); gap: 9px; }
   .alert-row .primary-button { grid-column: 2; justify-self: start; }
   .reorder-history-row { align-items: flex-start; }
   .reorder-popup { padding: 24px 19px 19px; border-radius: 22px; }
   .reorder-popup h2 { font-size: 22px; }
   .reorder-popup-actions button { flex: 1; }
-  .seller-logout-dialog { padding: 24px 19px 19px; border-radius: 22px; }
-  .seller-logout-dialog h2 { font-size: 22px; }
-  .seller-logout-actions button { flex: 1; }
   .seller-header { height: 70px; padding: 8px 12px 8px 0; gap: 8px; }
   .seller-brand img { width: 42px; height: 42px; }
   .seller-brand b { font-size: 16px; }

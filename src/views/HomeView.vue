@@ -5,6 +5,7 @@
           Supabase is not configured. Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code>, then restart the dev server.
         </div>
         <div v-if="!dashboardOpen && !sellerOpen && !riderOpen && !cartOpen" class="store-announcements">
+          <div class="elfsight-app-dd1fc735-75ea-4ab8-b6f1-67d55ec594d5" data-elfsight-app-lazy></div>
           <div class="shipping-announcement">Thoughtfully thrifted style · Free shipping on orders over ₱2,900</div>
         </div>
         <AppHeader v-if="!sellerOpen && !riderOpen" :user="user" :wish-count="wished.length" :cart-count="cart.length"
@@ -18,7 +19,7 @@
         <HeroSection />
         <CategoriesSection @navigate="handleCategoryNavigation" />
         <ProductsSection :wished="wishedIds" @toggle-wish="toggleWish" @add-cart="addToCart" @navigate="handleCategoryNavigation" />
-        <OutfitBuilder :cart="cart" @need-login="needLogin" @outfit-checkout="onOutfitCheckout" />
+        <OutfitBuilder :cart="cart" :products="dashboardProducts" @need-login="needLogin" @outfit-checkout="onOutfitCheckout" />
         <DealsSection @navigate="handleHeaderNavigation" />
         <AppFooter />
       </div>
@@ -26,10 +27,10 @@
         :orders="orders" :products="dashboardProducts" :categories="categories" :initial-view="dashboardView"
         @storefront="dashboardOpen = false"
         @add-cart="dashboardAddToCart" @toggle-wish="dashboardToggleWish"
-        @update-user="onProfileUpdate" @message="addOrderMessage" />
+        @update-user="onProfileUpdate" @message="addOrderMessage" @message-seller="sellerChatOpen = true" />
       <SellerDashboard v-if="sellerUser && sellerOpen" :user="sellerUser" :orders="sellerOrders" :riders="registeredRiders"
         @logout="logout" @profile-update="onSellerProfileUpdate"
-        @status-change="updateSellerOrderStatus" @rider-change="updateSellerOrderRider" />
+        @status-change="updateSellerOrderStatus" @rider-change="updateSellerOrderRider" @message="addOrderMessage" />
       <RiderDashboard v-if="riderUser && riderOpen" :rider="riderUser" :orders="sellerOrders"
         @storefront="returnToStorefront" @logout="confirmRiderLogout"
         @profile-update="updateRiderProfile"
@@ -41,12 +42,15 @@
     <RiderAuthModal :open="riderAuthOpen" @close="onRiderAuthDismiss" @back="backToAuthSelection" @auth="onRiderAuth" />
     <SearchModal :open="searchOpen" @close="searchOpen = false" />
     <ChatModal :open="chatOpen" @close="chatOpen = false" />
+    <StorefrontSellerChat :open="sellerChatOpen" :user="user" @close="sellerChatOpen = false" @login="authOpen = true" />
     <CartModal :open="cartOpen" :items="cart" :user="user" :checkout-loading="checkoutLoading" @close="cartOpen = false"
       @open-dashboard="dashboardOpen = true; cartOpen = false"
       @remove="confirmRemoveCart" @checkout="checkoutCart" @edit="editCart"
       @toggle="toggleCartSelect" @toggle-all="toggleCartAll" />
     <WishlistModal :open="wishOpen" :items="wished" @close="wishOpen = false"
       @remove="confirmRemoveWish" @add-cart="moveToCart" />
+    <LogoutConfirmation :open="logoutRole !== null" :account-type="logoutRole || 'buyer'"
+      @cancel="logoutRole = null" @confirm="confirmLogout" />
 
     <div v-if="orderConfirmationOpen" class="success-overlay" @click.self="closeOrderConfirmation">
       <div class="success-popup" role="dialog" aria-modal="true" aria-label="Order confirmation">
@@ -79,12 +83,15 @@
       <span class="toast-icon">✓</span>
       <span>Added to cart</span>
     </div>
+    <button v-if="!sellerOpen && !riderOpen && !cartOpen && (!dashboardOpen || user?.role === 'buyer')" class="storefront-chat-launcher" type="button" @click="sellerChatOpen = true">
+      <ion-icon :icon="chatbubbleEllipsesOutline" /><span>Message seller</span>
+    </button>
   </ion-page>
 </template>
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { IonPage, IonContent, alertController } from '@ionic/vue'
-import { closeOutline } from 'ionicons/icons'
+import { IonPage, IonContent, IonIcon, alertController } from '@ionic/vue'
+import { chatbubbleEllipsesOutline, closeOutline } from 'ionicons/icons'
 import AppHeader from '../components/AppHeader.vue'
 import HeroSection from '../components/HeroSection.vue'
 import CategoriesSection from '../components/CategoriesSection.vue'
@@ -93,6 +100,7 @@ import OutfitBuilder from '../components/OutfitBuilder.vue'
 import DealsSection from '../components/DealsSection.vue'
 import AppFooter from '../components/AppFooter.vue'
 import UserDashboard from '../components/UserDashboard.vue'
+import LogoutConfirmation from '../components/LogoutConfirmation.vue'
 import SellerDashboard from '../components/SellerDashboard.vue'
 import RiderDashboard from '../components/RiderDashboard.vue'
 import AuthModal from '../modals/AuthModal.vue'
@@ -100,10 +108,12 @@ import SellerAuthModal from '../modals/SellerAuthModal.vue'
 import RiderAuthModal from '../modals/RiderAuthModal.vue'
 import SearchModal from '../modals/SearchModal.vue'
 import ChatModal from '../modals/ChatModal.vue'
+import StorefrontSellerChat from '../modals/StorefrontSellerChat.vue'
 import CartModal from '../modals/CartModal.vue'
 import WishlistModal from '../modals/WishlistModal.vue'
 import { categories, getProductSizes, products, type CartItem, type OrderMessage, type OrderRecord, type Product, type SellerOrderRecord } from '../data/mockData'
 import { isSupabaseConfigured, supabase } from '../utils/supabase'
+import { prepareProductImageFromDataUrl } from '../utils/productImage'
 import {
   applyPendingRole,
   fetchMyProfile,
@@ -139,11 +149,13 @@ type RiderAccount = RiderSummary
 type ProfileUpdate = { name: string; email: string; phone?: string; address?: string; avatar?: string }
 
 const authOpen = ref(false), sellerAuthOpen = ref(false), riderAuthOpen = ref(false), dashboardOpen = ref(false), sellerOpen = ref(false), riderOpen = ref(false), searchOpen = ref(false), chatOpen = ref(false)
+const sellerChatOpen = ref(false)
 const cartOpen = ref(false), wishOpen = ref(false), checkoutLoading = ref(false)
 const dashboardView = ref<'overview' | 'orders' | 'wishlist' | 'profile' | 'categories'>('overview')
 const cartToast = ref(false)
 const orderConfirmationOpen = ref(false)
 const returningToAuthSelection = ref(false)
+const logoutRole = ref<'buyer' | 'rider' | null>(null)
 const orderConfirmation = ref({ orderId: '', payment: 'GCash', total: 0 })
 const user = ref<User | null>(null)
 const sellerUser = ref<User | null>(null)
@@ -158,6 +170,7 @@ const wishedIds = computed(() => wished.value.map(i => i.id))
 let pending: (() => void) | null = null
 let cartToastTimer: number | undefined
 let unsubscribeSupabaseAuth: (() => void) | undefined
+let unsubscribeOrderMessages: (() => void) | undefined
 let sessionToken = 0
 
 function showCartToast() {
@@ -209,7 +222,24 @@ async function loadBuyerData(buyerId: string) {
     listWishlist(buyerId),
     listBuyerOrders(buyerId)
   ])
-  cart.value = cartItems
+  cart.value = await Promise.all(cartItems.map(async item => {
+    if (!item.productId || item.fit?.version === 7 || !item.img.startsWith('data:image/')) return item
+    try {
+      const prepared = await prepareProductImageFromDataUrl(item.img)
+      const updatedItem = { ...item, img: prepared.dataUrl, fit: prepared.fit }
+      if (!item.rowId) return updatedItem
+
+      try {
+        return await updateCartItemRecord(item.rowId, { image: prepared.dataUrl, fit: prepared.fit })
+      } catch (error) {
+        await showError('Unable to save the prepared product image', error)
+        return updatedItem
+      }
+    } catch (error) {
+      await showError('Unable to prepare the product image', error)
+      return item
+    }
+  }))
   wished.value = wishItems
   orders.value = orderItems
 }
@@ -220,6 +250,12 @@ async function loadSellerOrders() {
 
 async function loadRiderOrders(riderId: string) {
   sellerOrders.value = await listRiderOrders(riderId)
+}
+
+async function refreshCurrentOrders() {
+  if (sellerUser.value) await loadSellerOrders()
+  else if (riderUser.value) await loadRiderOrders(riderUser.value.id)
+  else if (user.value) orders.value = await listBuyerOrders(user.value.id)
 }
 
 async function refreshRegisteredRiders() {
@@ -256,7 +292,7 @@ async function syncSession(openDashboard: boolean) {
       dashboardOpen.value = openDashboard
       sellerOpen.value = false
       riderOpen.value = false
-      await loadBuyerData(profile.id)
+      await Promise.all([loadBuyerData(profile.id), loadDashboardProducts()])
     } else if (profile.role === 'seller') {
       resetBuyerState()
       sellerUser.value = account
@@ -280,8 +316,18 @@ async function syncSession(openDashboard: boolean) {
 }
 
 onMounted(async () => {
+  void loadDashboardProducts()
+
   if (supabase) {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const client = supabase
+    const channel = client.channel('order-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_messages' }, () => {
+        void refreshCurrentOrders().catch(error => showError('Unable to refresh messages', error))
+      })
+      .subscribe()
+    unsubscribeOrderMessages = () => { void client.removeChannel(channel) }
+
+    const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
         sessionToken += 1
         clearSessionState()
@@ -306,16 +352,20 @@ onMounted(async () => {
     await syncSession(false)
   }
 
-  if (document.querySelector('script[data-elfsight-platform], script[src^="https://elfsightcdn.com/platform.js"]')) return
-  const script = document.createElement('script')
-  script.src = 'https://elfsightcdn.com/platform.js'
-  script.async = true
-  script.dataset.elfsightPlatform = ''
-  script.onerror = () => console.error('Unable to load Elfsight widgets.')
-  document.head.appendChild(script)
+  if (!document.querySelector('script[data-elfsight-platform], script[src^="https://elfsightcdn.com/platform.js"]')) {
+    const script = document.createElement('script')
+    script.src = 'https://elfsightcdn.com/platform.js'
+    script.async = true
+    script.dataset.elfsightPlatform = ''
+    script.onerror = () => console.error('Unable to load the header announcement widget.')
+    document.head.appendChild(script)
+  }
 })
 
-onUnmounted(() => unsubscribeSupabaseAuth?.())
+onUnmounted(() => {
+  unsubscribeSupabaseAuth?.()
+  unsubscribeOrderMessages?.()
+})
 
 /* Guests get the login form; the clicked action runs right after they log in. */
 const needLogin = (action: () => void) => {
@@ -380,7 +430,13 @@ async function addCartItem(product: Product | CartItem, afterAdded?: () => void)
   const size = await promptForProductSize(product)
   if (getProductSizes(product).length && !size) return
 
-  const item = toItem(product, size)
+  let cartProduct = product
+  if ('productId' in product && product.productId && product.img.startsWith('data:image/')) {
+    const preparedImage = await prepareProductImageFromDataUrl(product.img)
+    cartProduct = { ...product, img: preparedImage.dataUrl, fit: preparedImage.fit }
+  }
+
+  const item = toItem(cartProduct, size)
   const alreadyInCart = cart.value.some(existing => String(existing.id) === String(item.id) && existing.size === item.size)
   if (!alreadyInCart) {
     if (!user.value) return
@@ -558,7 +614,7 @@ const handleCategoryNavigation = () => {
     openCustomerDashboard('categories')
     return
   }
-  handleHeaderNavigation('shop')
+  authOpen.value = true
 }
 
 const onAuth = async () => {
@@ -632,11 +688,15 @@ async function confirmAction(header: string, message: string) {
   return result.role === 'confirm'
 }
 
-async function confirmBuyerLogout() {
-  if (await confirmAction('Log out?', 'Are you sure you want to log out of your account?')) await logout()
+function confirmBuyerLogout() {
+  logoutRole.value = 'buyer'
 }
-async function confirmRiderLogout() {
-  if (await confirmAction('Log out?', 'Are you sure you want to log out of your rider account?')) await logout()
+function confirmRiderLogout() {
+  logoutRole.value = 'rider'
+}
+async function confirmLogout() {
+  logoutRole.value = null
+  await logout()
 }
 
 async function confirmRemoveCart(id: CartItem['id']) {
@@ -812,6 +872,29 @@ async function navigateStorefront(id: string) {
   color: #bd5b58;
   text-align: center;
   font: 600 12px var(--font-body);
+}
+.storefront-chat-launcher {
+  position: absolute;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 10000;
+  pointer-events: auto;
+  min-height: 52px;
+  padding: 0 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 999px;
+  background: #c45f5f;
+  color: #fff;
+  box-shadow: 0 10px 28px rgba(67, 35, 30, .24);
+  cursor: pointer;
+  font: 700 13px var(--font-body);
+}
+.storefront-chat-launcher ion-icon { font-size: 20px; }
+@media (max-width: 600px) {
+  .storefront-chat-launcher { right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); min-height: 48px; padding: 0 16px; }
 }
 .success-overlay {
   position: fixed;

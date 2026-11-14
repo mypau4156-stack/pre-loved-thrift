@@ -177,6 +177,11 @@ export async function updateMyProfile(patch: ProfilePatch): Promise<Profile> {
   return data as Profile
 }
 
+export async function updateMyPassword(password: string): Promise<void> {
+  const { error } = await requireSupabase().auth.updateUser({ password })
+  if (error) throw error
+}
+
 export async function listRiders(): Promise<RiderSummary[]> {
   const { data, error } = await requireSupabase()
     .from('profiles')

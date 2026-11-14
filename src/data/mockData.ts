@@ -6,6 +6,11 @@ export interface GarmentImageFit {
   top: number
   right: number
   bottom: number
+  waistLeft?: number
+  waistRight?: number
+  waistY?: number
+  contain?: boolean
+  version?: number
 }
 export interface Product { id: number | string; productId?: string; name: string; price: number; was?: number; img: string; hot?: boolean; newArrival?: boolean;
 cat: string; type?: string; slot?: Slot; fit?: GarmentImageFit }
@@ -26,6 +31,39 @@ size?: string
 note?: string
 cat?: string
 type?: string
+}
+function slotFromDetails(details: string): Slot | undefined {
+  if (/\b(shoes?|footwear|sneakers?|boots?|sandals?)\b/.test(details)) return 'shoes'
+  if (/\b(dresses?|gowns?)\b/.test(details)) return 'dress'
+  if (/\b(tops?|t-?shirts?|tees?|shirts?|blouses?|sweaters?|polos?|jackets?|coats?|hoodies?|cardigans?)\b/.test(details)) return 'top'
+  if (/\b(bottoms?|jeans|denim|pants|trousers|shorts?|skorts?|skirts?|leggings)\b/.test(details)) return 'bottom'
+  return undefined
+}
+export function getProductSlot(product: { name: string; slot?: Slot; cat?: string; type?: string }): Slot | undefined {
+  const typeDetails = (product.type ?? '').toLowerCase()
+  if (/\b(bags?|handbags?|accessories)\b/.test(typeDetails)) return undefined
+  const typeSlot = slotFromDetails(typeDetails)
+  if (typeSlot) return typeSlot
+  const namedSlot = slotFromDetails(product.name.toLowerCase())
+  if (namedSlot) return namedSlot
+  if (product.slot) return product.slot
+  const categoryDetails = (product.cat ?? '').toLowerCase()
+  const categorySlot = /\b(women'?s?\s+dresses?|dresses?)\b/.test(categoryDetails)
+    ? 'dress'
+    : /\b(tops?|t-?shirts?|shirts?)\b/.test(categoryDetails)
+    ? 'top'
+    : /\b(denim|bottoms?|jeans|pants|trousers|shorts?|skirts?)\b/.test(categoryDetails)
+      ? 'bottom'
+      : /\b(shoes?|footwear)\b/.test(categoryDetails)
+        ? 'shoes'
+        : undefined
+  if (categorySlot) return categorySlot
+  return undefined
+}
+export function isShortBottom(product: { name: string; cat?: string; type?: string }): boolean {
+  const details = `${product.name} ${product.cat ?? ''} ${product.type ?? ''}`.toLowerCase()
+  if (/\b(maxi|long)\s+skirts?\b/.test(details)) return false
+  return /\bshorts?\b(?![- ]sleeve)\b|\bskorts?\b|\b(mini\s+)?skirts?\b/.test(details)
 }
 export function getProductSizes(product: { name: string; slot?: Slot; cat?: string; type?: string }): string[] {
   const details = `${product.slot ?? ''} ${product.cat ?? ''} ${product.type ?? ''} ${product.name}`.toLowerCase()
@@ -62,7 +100,8 @@ deliveryCompletedAt?: string
 messages?: OrderMessage[]
 }
 export interface OrderMessage {
-sender: 'rider' | 'customer'
+sender: 'rider' | 'customer' | 'seller'
+channel?: 'delivery' | 'buyer-seller' | 'rider-seller'
 text: string
 sentAt: string
 }

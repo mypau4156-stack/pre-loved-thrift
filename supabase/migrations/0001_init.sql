@@ -149,7 +149,8 @@ create table if not exists public.order_items (
 create table if not exists public.order_messages (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
-  sender text not null check (sender in ('rider', 'customer')),
+  sender text not null check (sender in ('rider', 'customer', 'seller')),
+  channel text not null default 'delivery' check (channel in ('delivery', 'buyer-seller', 'rider-seller')),
   sender_id uuid references public.profiles(id) on delete set null,
   text text not null check (char_length(text) between 1 and 500),
   created_at timestamptz not null default now()
@@ -787,7 +788,11 @@ using (
   exists (
     select 1 from public.orders o
     where o.id = order_id
-      and (o.buyer_id = auth.uid() or public.is_seller() or (public.is_rider() and o.rider_id = auth.uid()))
+      and (
+        public.is_seller()
+        or (o.buyer_id = auth.uid() and channel in ('delivery', 'buyer-seller'))
+        or (public.is_rider() and o.rider_id = auth.uid() and channel in ('delivery', 'rider-seller'))
+      )
   )
 );
 
@@ -796,13 +801,15 @@ create policy order_messages_insert on public.order_messages for insert to authe
 with check (
   sender_id = auth.uid()
   and (
-    (sender = 'customer' and exists (
+    (sender = 'customer' and channel in ('delivery', 'buyer-seller') and exists (
       select 1 from public.orders o where o.id = order_id and o.buyer_id = auth.uid()
     ))
     or
-    (sender = 'rider' and exists (
+    (sender = 'rider' and channel in ('delivery', 'rider-seller') and exists (
       select 1 from public.orders o where o.id = order_id and o.rider_id = auth.uid()
     ))
+    or
+    (sender = 'seller' and channel in ('buyer-seller', 'rider-seller') and public.is_seller())
   )
 );
 
@@ -857,4 +864,18 @@ grant execute on function public.current_user_role() to authenticated;
 revoke all on function public.is_seller() from public;
 grant execute on function public.is_seller() to authenticated;
 revoke all on function public.is_rider() from public;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+    and not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'order_messages'
+    ) then
+    alter publication supabase_realtime add table public.order_messages;
+  end if;
+end
+$$;
 grant execute on function public.is_rider() to authenticated;

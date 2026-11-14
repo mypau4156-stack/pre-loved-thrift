@@ -74,6 +74,7 @@ function mapOrderItem(row: DbOrderItem): CartItem {
 function mapMessage(row: DbOrderMessage): OrderMessage {
   return {
     sender: row.sender,
+    channel: row.channel ?? 'delivery',
     text: row.text,
     sentAt: row.created_at
   }
@@ -164,11 +165,13 @@ export async function addCartItemRecord(userId: string, item: CartItem): Promise
 
 export async function updateCartItemRecord(
   rowId: string,
-  patch: { size?: string; note?: string }
+  patch: { size?: string; note?: string; image?: string; fit?: CartItem['fit'] }
 ): Promise<CartItem> {
-  const update: Record<string, string | null> = {}
+  const update: Record<string, unknown> = {}
   if (patch.size !== undefined) update.size = patch.size
   if (patch.note !== undefined) update.note = patch.note || null
+  if (patch.image !== undefined) update.image = patch.image
+  if (patch.fit !== undefined) update.fit = patch.fit
 
   const { data, error } = await requireSupabase()
     .from('cart_items')
@@ -410,6 +413,7 @@ export async function addOrderMessageRecord(dbId: string, message: OrderMessage)
   const { error } = await client.from('order_messages').insert({
     order_id: dbId,
     sender: message.sender,
+    channel: message.channel ?? 'delivery',
     sender_id: user?.id ?? null,
     text: message.text
   })

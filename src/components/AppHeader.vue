@@ -35,6 +35,16 @@
                 </button>
 
                 <button
+                    class="chat-help-button"
+                    type="button"
+                    aria-label="Open Pre-Loved Thrift assistant"
+                    @click="$emit('open-chat')"
+                >
+                    <ion-icon :icon="chatbubbleEllipsesOutline" />
+                    <span>Ask us</span>
+                </button>
+
+                <button
                     class="icon-btn wishlist-btn"
                     aria-label="Wishlist"
                     @click="openWishlist"
@@ -132,6 +142,7 @@ import {
     logOutOutline,
     heartOutline,
     chevronDownOutline,
+    chatbubbleEllipsesOutline,
 } from "ionicons/icons";
 
 const nav = [
@@ -156,6 +167,7 @@ const emit = defineEmits<{
     (e: "rider-login"): void;
     (e: "logout"): void;
     (e: "open-search"): void;
+    (e: "open-chat"): void;
     (e: "open-cart"): void;
     (e: "open-wish"): void;
     (e: "navigate", id: string): void;
@@ -323,6 +335,22 @@ nav a.on::after {
     background: rgba(255, 255, 255, 0.6);
     color: var(--coral-dark);
 }
+.chat-help-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 38px;
+    padding: 0 12px !important;
+    border: 1px solid #e8c5c2 !important;
+    border-radius: 999px;
+    background: #fff !important;
+    color: var(--coral-dark);
+    font: 700 12px var(--font-body);
+    white-space: nowrap;
+}
+.chat-help-button ion-icon { font-size: 17px; }
+.chat-help-button:hover { background: #fff5f3 !important; }
 .icon-btn {
     width: 36px;
     height: 36px;
@@ -541,6 +569,12 @@ nav a.on::after {
     .search-pill span {
         display: none;
     }
+    .chat-help-button {
+        width: 34px;
+        height: 34px;
+        padding: 0 !important;
+    }
+    .chat-help-button span { display: none; }
     .icon-btn {
         width: 32px;
         height: 32px;
@@ -591,5 +625,11 @@ nav a.on::after {
     .search-pill span {
         display: none;
     }
+    .chat-help-button {
+        width: 38px;
+        height: 38px;
+        padding: 0 !important;
+    }
+    .chat-help-button span { display: none; }
 }
 </style>

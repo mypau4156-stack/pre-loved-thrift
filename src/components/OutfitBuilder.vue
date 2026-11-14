@@ -1,5 +1,5 @@
 <template>
- <section id="stylist" class="section"><div class="wrap">
+ <section id="stylist" class="section outfit-builder-section"><div class="wrap">
   <div class="sec-head"><div><h2>Outfit Builder</h2><p>Choose your character, then style it with pieces from your cart.</p></div></div>
  <div class="builder">
  <div class="stage" ref="stageEl" :class="{ over }" @pointermove="tilt" @pointerleave="untilt">
@@ -23,9 +23,10 @@
  <h3>Skin tone</h3>
  <div class="tones"><button v-for="t in skinTones" :key="t.label" :class="{ on: t.label === skin.label }"
  :style="{ background: t.swatch }" :aria-label="t.label" :title="t.label" @click="skin = t" /></div>
- <h3>Wardrobe <small>from your cart · drag onto the character · or tap to wear</small></h3>
- <div v-if="wardrobe.length" class="tray"><div v-for="g in wardrobe" :key="g.id" class="piece" @pointerdown="down($event, g)">
- <img :src="g.img" :alt="g.name" draggable="false" /><span>{{ g.name }}</span></div></div>
+ <h3>Wardrobe <small>from your cart · tap items to combine them</small></h3>
+ <div v-if="wardrobe.length" class="tray"><button v-for="g in wardrobe" :key="g.id" type="button" class="piece"
+ :class="{ worn: isWorn(g) }" :aria-pressed="isWorn(g)" @pointerdown="down($event, g)" @click="wear(g)">
+ <img :src="g.img" :alt="g.name" draggable="false" /><span>{{ g.name }}</span></button></div>
  <p v-else class="empty">Your cart is empty — add pieces from New Arrivals, then build your look here.</p>
  <div class="actions">
  <button class="btn btn-coral" @click="checkoutOutfit">Checkout</button>
@@ -39,9 +40,9 @@
 </template>
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { characters, bodyTypes, products, skinTones, type CartItem, type Character, type Slot } from '../data/mockData'
+import { characters, bodyTypes, getProductSlot, products as builtInProducts, skinTones, type CartItem, type Character, type Product, type Slot } from '../data/mockData'
 import FigureCharacter from './FigureCharacter.vue'
-const props = defineProps<{ cart: CartItem[] }>()
+const props = defineProps<{ cart: CartItem[]; products?: Product[] }>()
 const emit = defineEmits<{ (e: 'needLogin', action: () => void): void; (e: 'outfitCheckout', items: CartItem[]): void }>()
 
 const char = ref(characters[0])
@@ -51,6 +52,7 @@ const worn = ref<Partial<Record<Slot, CartItem>>>({})
 const wornList = computed(() => Object.values(worn.value).filter(Boolean) as CartItem[])
 const stageEl = ref<HTMLElement>(); const over = ref(false)
 const drag = ref<{ g: CartItem; x: number; y: number } | null>(null)
+const outfitProducts = computed(() => [...(props.products ?? []), ...builtInProducts])
 
 function setCharacter(character: Character) {
  char.value = character
@@ -74,14 +76,27 @@ function tilt(e: PointerEvent) {
 }
 function untilt() { rx.value = 0; ry.value = 0 }
 
-/* Only pieces with a known slot can be worn, and they all come from the cart. */
+/* Keep every cart item in the wardrobe; only recognized garment slots can be worn. */
 const wardrobe = computed(() => props.cart.flatMap(item => {
- const product = products.find(candidate => String(candidate.id) === String(item.id))
- const category = product?.cat.toLowerCase() ?? ''
- const name = (product?.name ?? item.name).toLowerCase()
- if (category.includes('accessor') || category.includes('bag') || /\b(bag|handbag|accessor(?:y|ies))\b/.test(name)) return []
- const slot = product?.slot ?? item.slot
- return slot ? [{ ...item, img: product?.img ?? item.img, slot, fit: product?.fit ?? item.fit }] : []
+ const productKey = String(item.id).split('::')[0]
+ const product = outfitProducts.value.find(candidate => String(candidate.id) === productKey ||
+  (item.productId !== undefined && String(candidate.productId) === String(item.productId)))
+ const slot = product?.slot ?? (product
+  ? getProductSlot(product)
+  : undefined) ?? item.slot ?? (product
+  ? getProductSlot({
+    name: item.name,
+    slot: item.slot,
+    cat: item.cat,
+    type: item.type
+   })
+  : getProductSlot(item))
+ return [{
+  ...item,
+  img: item.productId ? item.img : product?.img ?? item.img,
+  slot,
+  fit: item.fit ?? product?.fit
+ }]
 }))
 
 function checkoutOutfit() {
@@ -91,12 +106,30 @@ function checkoutOutfit() {
 }
 function clearOutfit() { worn.value = {} }
 
+function isWorn(item: CartItem) {
+ return wornList.value.some(wornItem => String(wornItem.id) === String(item.id))
+}
+
 function wear(g: CartItem) {
  if (!g.slot) return
  const w = { ...worn.value }
- if (g.slot === 'dress') { delete w.top; delete w.bottom }
- else if (g.slot === 'top' || g.slot === 'bottom') delete w.dress
- w[g.slot] = g; worn.value = w
+ const targetSlot: Slot = g.slot === 'dress' && w.bottom ? 'top' : g.slot
+ const current = w[targetSlot]
+ if (current && String(current.id) === String(g.id)) {
+  delete w[targetSlot]
+ } else {
+  if (targetSlot === 'bottom' && w.dress) {
+   if (!w.top) w.top = { ...w.dress, slot: 'top' }
+   delete w.dress
+  } else if (targetSlot === 'dress') {
+   delete w.top
+   delete w.bottom
+  } else if (targetSlot === 'top' || targetSlot === 'bottom') {
+   delete w.dress
+  }
+  w[targetSlot] = targetSlot === g.slot ? g : { ...g, slot: targetSlot }
+ }
+ worn.value = w
 }
 function down(e: PointerEvent, g: CartItem) {
  const sx = e.clientX, sy = e.clientY; let moved = false
@@ -108,13 +141,19 @@ function down(e: PointerEvent, g: CartItem) {
  }
  const up = () => {
  window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up)
- if (!moved || over.value) wear(g); drag.value = null; over.value = false
+ if (moved && over.value) wear(g); drag.value = null; over.value = false
  }
  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up)
 }
 </script>
 <style scoped>
-.builder { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 32px; background: #fff; border:
+.outfit-builder-section {
+ background:
+  linear-gradient(rgba(246, 239, 235, 0.78), rgba(246, 239, 235, 0.78)),
+  url('/assets/frontstore%20dp.jpg') center 38% / cover no-repeat;
+ background-attachment: scroll, fixed;
+}
+.builder { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 32px; background: rgba(255, 255, 255, 0.88); border:
  1px solid #f0e6e0; border-radius: 36px; padding: 28px; }
 .stage { position: relative; aspect-ratio: 1 / 2; width: 100%; max-width: 320px; max-height: 640px; border-radius: 28px; background: linear-gradient(#f9e9e4, #f3ebe4); transition: box-shadow .2s; margin: 0 auto; overflow: hidden; perspective: 900px; }
 .stage.over { box-shadow: 0 0 0 4px var(--coral); }
@@ -126,6 +165,7 @@ function down(e: PointerEvent, g: CartItem) {
 
 .panel h3 { font: 700 15px var(--font-body); margin: 0 0 12px; } .panel h3 small { font-weight: 500; color:
  var(--muted); margin-left: 6px; }
+.piece.worn { border-color: var(--coral); background: var(--coral-soft); box-shadow: 0 0 0 2px #ef8f7a33; }
 .panel h3:not(:first-child) { margin-top: 26px; }
 .chars { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .chars button { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 14px; border-radius: 14px; border:
@@ -141,7 +181,7 @@ function down(e: PointerEvent, g: CartItem) {
 .tones button.on { box-shadow: 0 0 0 3px var(--coral); }
 .tray { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; }
 .piece { background: var(--cream); border: 1px solid #eadfd8; border-radius: 16px; padding: 8px; text-align:
- center; cursor: grab; touch-action: none; user-select: none; transition: transform .2s, border-color .2s; }
+ center; color: var(--ink); font: inherit; cursor: grab; touch-action: none; user-select: none; transition: transform .2s, border-color .2s; }
 .piece:hover { transform: translateY(-2px); border-color: var(--coral); }
 .piece img { width: 100%; height: 96px; object-fit: contain; pointer-events: none; } .piece span { font-size:
  12px; font-weight: 600; }
@@ -151,6 +191,6 @@ function down(e: PointerEvent, g: CartItem) {
 .actions .btn { flex: 1; justify-content: center; padding: 14px 20px; }
 .actions .btn:disabled { opacity: .5; cursor: not-allowed; }
 .ghost { position: fixed; z-index: 9999; height: 130px; transform: translate(-50%, -50%) rotate(-4deg); pointer-events: none; filter: drop-shadow(0 12px 14px #0004); }
-@media (max-width: 820px) { .builder { grid-template-columns: 1fr; padding: 18px; } .stage { max-width: 300px; }
+@media (max-width: 820px) { .outfit-builder-section { background-attachment: scroll, fixed; } .builder { grid-template-columns: 1fr; padding: 18px; } .stage { max-width: 300px; }
  }
 </style>

@@ -1,6 +1,6 @@
 import { refreshOutline } from 'ionicons/icons'
 import { requireSupabase } from '../utils/supabase'
-import type { Product } from '../data/mockData'
+import { getProductSlot, type GarmentImageFit, type Product, type Slot } from '../data/mockData'
 import type { DbProduct, SellerActivityRow } from '../types/database'
 
 export interface InventoryProduct {
@@ -14,6 +14,8 @@ export interface InventoryProduct {
   autoReorder: boolean
   color: string
   img: string
+  slot?: Slot
+  fit?: GarmentImageFit
   sold: number
 }
 
@@ -62,6 +64,7 @@ function mapReorderRequest(row: DbReorderRequest): ReorderRequest {
 }
 
 function mapProduct(row: DbProduct): InventoryProduct {
+  const fit = isGarmentImageFit(row.fit) ? row.fit : undefined
   return {
     id: row.id,
     name: row.name,
@@ -73,8 +76,17 @@ function mapProduct(row: DbProduct): InventoryProduct {
     autoReorder: row.auto_reorder,
     color: row.color || '',
     img: row.image || '',
+    slot: row.slot ? getProductSlot({ name: row.name, cat: row.category, type: row.type || undefined, slot: row.slot as Slot }) : getProductSlot({ name: row.name, cat: row.category, type: row.type || undefined }),
+    fit,
     sold: row.sold
   }
+}
+
+function isGarmentImageFit(value: unknown): value is GarmentImageFit {
+  if (!value || typeof value !== 'object') return false
+  const fit = value as Record<string, unknown>
+  return ['imageWidth', 'imageHeight', 'left', 'top', 'right', 'bottom']
+    .every(key => typeof fit[key] === 'number' && Number.isFinite(fit[key]))
 }
 
 function mapActivity(row: SellerActivityRow): ActivityEntry {
@@ -105,6 +117,10 @@ export async function listStorefrontProducts(): Promise<Product[]> {
     img: row.image || '',
     cat: row.category,
     type: row.type || undefined,
+    slot: row.slot
+      ? getProductSlot({ name: row.name, cat: row.category, type: row.type || undefined, slot: row.slot as Slot })
+      : getProductSlot({ name: row.name, cat: row.category, type: row.type || undefined }),
+    fit: isGarmentImageFit(row.fit) ? row.fit : undefined,
     newArrival: true
   }))
 }
@@ -134,6 +150,7 @@ export interface NewProductInput {
   reorderPoint: number
   color: string
   image: string
+  fit?: GarmentImageFit
 }
 
 export async function createSellerProduct(sellerId: string, input: NewProductInput): Promise<InventoryProduct> {
@@ -150,6 +167,8 @@ export async function createSellerProduct(sellerId: string, input: NewProductInp
       auto_reorder: false,
       color: input.color,
       image: input.image,
+      slot: getProductSlot({ name: input.name, cat: input.category, type: input.type }),
+      fit: input.fit ?? null,
       sold: 0,
       active: true
     })
@@ -162,9 +181,11 @@ export async function createSellerProduct(sellerId: string, input: NewProductInp
 
 export async function updateSellerProduct(
   id: string,
-  patch: Partial<Pick<InventoryProduct, 'price' | 'stock' | 'reorderPoint' | 'autoReorder'>>
+  patch: Partial<Pick<InventoryProduct, 'type' | 'slot' | 'price' | 'stock' | 'reorderPoint' | 'autoReorder'>>
 ): Promise<void> {
-  const update: Record<string, number | boolean> = {}
+  const update: Record<string, string | number | boolean> = {}
+  if (patch.type !== undefined) update.type = patch.type
+  if (patch.slot !== undefined) update.slot = patch.slot
   if (patch.price !== undefined) update.price = patch.price
   if (patch.stock !== undefined) update.stock = Math.floor(patch.stock)
   if (patch.reorderPoint !== undefined) update.reorder_point = Math.floor(patch.reorderPoint)

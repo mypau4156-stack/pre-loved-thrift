@@ -23,7 +23,10 @@
           <div class="welcome">
             <div><span class="eyebrow">YOUR ACCOUNT</span><h1>Welcome back, {{ firstName }}!</h1>
               <p>Find something lovely, or pick up where you left off.</p></div>
-            <button class="shop-button" @click="openShop">Explore the shop <ion-icon :icon="arrowForwardOutline" /></button>
+            <div class="welcome-actions">
+              <button class="message-seller-button" type="button" @click="$emit('message-seller')"><ion-icon :icon="chatbubbleEllipsesOutline" /> Message seller</button>
+              <button class="shop-button" @click="openShop">Explore the shop <ion-icon :icon="arrowForwardOutline" /></button>
+            </div>
           </div>
           <div class="stats">
             <article><span class="stat-icon"><ion-icon :icon="bagHandleOutline" /></span><div><b>{{ orders.length }}</b><small>Orders placed</small></div></article>
@@ -133,10 +136,26 @@
                   <img :src="order.deliveryProof" alt="Photo proof of delivery" />
                   <small v-if="order.deliveryCompletedAt">Delivered {{ formatDate(order.deliveryCompletedAt) }}</small>
                 </div>
+                <section class="order-messages">
+                  <b>Message seller</b>
+                  <div v-if="order.messages?.some((message) => message.channel === 'buyer-seller')" class="customer-message-list">
+                    <div v-for="(message, index) in order.messages.filter((item) => item.channel === 'buyer-seller')" :key="`${message.sentAt}-${index}`"
+                      class="customer-message" :class="{ own: message.sender === 'customer' }">
+                      <small>{{ message.sender === 'customer' ? 'You' : 'Seller' }}</small>
+                      <p>{{ message.text }}</p>
+                    </div>
+                  </div>
+                  <p v-else class="no-customer-messages">Ask the seller a question about this order.</p>
+                  <form class="customer-message-form" @submit.prevent="sendSellerMessage(order)">
+                    <input v-model="sellerMessageDrafts[order.id]" maxlength="500" placeholder="Message the seller…" :aria-label="`Message seller about ${order.id}`" />
+                    <button type="submit" :disabled="!sellerMessageDrafts[order.id]?.trim()">Send</button>
+                  </form>
+                </section>
+
                 <section v-if="isOrderConfirmed(order) && order.rider" class="order-messages">
                   <b>Message {{ order.rider }}</b>
-                  <div v-if="order.messages?.length" class="customer-message-list">
-                    <div v-for="(message, index) in order.messages" :key="`${message.sentAt}-${index}`"
+                  <div v-if="order.messages?.some((message) => !message.channel || message.channel === 'delivery')" class="customer-message-list">
+                    <div v-for="(message, index) in order.messages.filter((item) => !item.channel || item.channel === 'delivery')" :key="`${message.sentAt}-${index}`"
                       class="customer-message" :class="{ own: message.sender === 'customer' }">
                       <small>{{ message.sender === 'customer' ? 'You' : order.rider }}</small>
                       <p>{{ message.text }}</p>
@@ -333,6 +352,7 @@
             <span>Address</span>
             <input v-model="profileDraft.address" type="text" />
           </label>
+          <ChangePasswordForm />
         </div>
 
         <div class="profile-edit-actions">
@@ -347,8 +367,9 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { IonIcon } from '@ionic/vue'
+import ChangePasswordForm from './ChangePasswordForm.vue'
 import {
-  arrowForwardOutline, bagHandleOutline, cartOutline, heart, heartOutline,
+  arrowForwardOutline, bagHandleOutline, cartOutline, chatbubbleEllipsesOutline, heart, heartOutline,
   storefrontOutline, personOutline, gridOutline, receiptOutline, createOutline, closeOutline, starOutline
 } from 'ionicons/icons'
 import type { CartItem, Category, OrderMessage, OrderRecord, Product } from '../data/mockData'
@@ -370,11 +391,13 @@ const emit = defineEmits<{
   (event: 'toggle-wish', product: Product): void
   (event: 'update-user', user: { name: string; email: string; phone?: string; address?: string; avatar?: string }): void
   (event: 'message', id: string, message: OrderMessage): void
+  (event: 'message-seller'): void
 }>()
 
 const view = ref<'overview' | 'orders' | 'wishlist' | 'profile' | 'categories' | 'reviews'>(props.initialView || 'overview')
 const selectedCategory = ref('')
 const messageDrafts = reactive<Record<string, string>>({})
+const sellerMessageDrafts = reactive<Record<string, string>>({})
 
 watch(() => props.initialView, (next) => {
   if (next) view.value = next
@@ -748,8 +771,14 @@ function formatDate(value: string) {
 function sendCustomerMessage(order: OrderRecord) {
   const text = messageDrafts[order.id]?.trim()
   if (!text) return
-  emit('message', order.id, { sender: 'customer', text, sentAt: new Date().toISOString() })
+  emit('message', order.id, { sender: 'customer', channel: 'delivery', text, sentAt: new Date().toISOString() })
   messageDrafts[order.id] = ''
+}
+function sendSellerMessage(order: OrderRecord) {
+  const text = sellerMessageDrafts[order.id]?.trim()
+  if (!text) return
+  emit('message', order.id, { sender: 'customer', channel: 'buyer-seller', text, sentAt: new Date().toISOString() })
+  sellerMessageDrafts[order.id] = ''
 }
 </script>
 
@@ -775,6 +804,9 @@ function sendCustomerMessage(order: OrderRecord) {
 .sidebar nav button.logout-link { color: #9b6864; margin-top: 8px; }
 .content { min-width: 0; display: grid; gap: 20px; }
 .welcome { min-height: 184px; border-radius: 24px; padding: 30px 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #fff; background: radial-gradient(circle at 86% 18%, #ffffff26 0 10%, transparent 10.5%), linear-gradient(125deg, #d86d6e, #b95e6a 72%, #96507a); box-shadow: 0 14px 32px #c45f5f22; }
+.welcome-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.message-seller-button { min-height: 42px; padding: 0 15px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #ffffff9c; border-radius: 12px; background: #ffffffeb; color: var(--coral-dark); cursor: pointer; white-space: nowrap; font: 700 12px var(--font-body); }
+.message-seller-button ion-icon { font-size: 17px; }
 .welcome h1, .page-heading h1 { margin: 8px 0; font: 700 30px var(--font-head); }
 .welcome h1 { color: #fff; }
 .welcome p, .page-heading p { margin: 0; color: #fffdeedb; font-size: 13px; line-height: 1.6; }
@@ -925,6 +957,8 @@ function sendCustomerMessage(order: OrderRecord) {
 }
 .profile-edit-modal {
   width: min(480px, calc(100vw - 26px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   background: #ffffff;
   border-radius: 22px;
   box-shadow: 0 16px 36px rgba(70, 28, 28, 0.18);
@@ -983,6 +1017,7 @@ function sendCustomerMessage(order: OrderRecord) {
   gap: 13px;
   background: #ffffff;
 }
+.profile-edit-body > :deep(.password-panel) { grid-column: 1 / -1; margin-top: 0; }
 .profile-edit-photo { display: flex; align-items: center; gap: 10px; }
 .profile-edit-avatar { width: 48px; height: 48px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #f9e2df; color: var(--coral-dark); font-size: 18px; font-weight: 700; }
 .profile-edit-avatar img { width: 100%; height: 100%; object-fit: cover; }

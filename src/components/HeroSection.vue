@@ -69,7 +69,10 @@ const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavio
 <style scoped>
 .hero {
   padding: 42px 0 28px;
-  background: linear-gradient(180deg, rgba(244, 232, 227, 0.8) 0%, rgba(246, 239, 235, 0.92) 100%);
+  background:
+    linear-gradient(90deg, rgba(246, 239, 235, 0.86) 0%, rgba(246, 239, 235, 0.72) 48%, rgba(246, 239, 235, 0.34) 100%),
+    url('/assets/frontstore%20dp.jpg') center 38% / cover no-repeat;
+  background-attachment: scroll, fixed;
 }
 .grid {
   display: grid;
@@ -246,7 +249,13 @@ p {
   margin-top: 2px;
 }
 @media (max-width: 820px) {
-  .hero { padding-top: 30px; }
+  .hero {
+    padding-top: 30px;
+    background:
+      linear-gradient(rgba(246, 239, 235, 0.82), rgba(246, 239, 235, 0.74)),
+      url('/assets/frontstore%20dp.jpg') center 38% / cover no-repeat;
+    background-attachment: scroll, fixed;
+  }
   .grid { grid-template-columns: 1fr; gap: 22px; }
   .copy { padding-top: 10px; }
   h1 { font-size: clamp(44px, 12vw, 74px); }

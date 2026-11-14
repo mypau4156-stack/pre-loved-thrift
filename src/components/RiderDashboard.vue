@@ -45,6 +45,7 @@
             <button type="submit" class="profile-save">Save changes</button>
           </div>
         </form>
+        <ChangePasswordForm />
       </section>
     </div>
 
@@ -122,9 +123,25 @@
           </section>
 
           <section class="message-section">
+            <span class="section-label">MESSAGE SELLER</span>
+            <div v-if="order.messages?.some((message) => message.channel === 'rider-seller')" class="message-list">
+              <div v-for="(message, index) in order.messages.filter((item) => item.channel === 'rider-seller')" :key="`${message.sentAt}-${index}`"
+                class="message-bubble" :class="{ own: message.sender === 'rider' }">
+                <b>{{ message.sender === 'rider' ? 'You' : 'Seller' }}</b>
+                <p>{{ message.text }}</p><small>{{ formatDateTime(message.sentAt) }}</small>
+              </div>
+            </div>
+            <p v-else class="no-messages">Ask the seller about this delivery.</p>
+            <form class="message-form" @submit.prevent="sendSellerMessage(order)">
+              <input v-model="sellerDrafts[order.id]" maxlength="500" placeholder="Message the seller…" :aria-label="`Message seller about ${order.id}`" />
+              <button type="submit" :disabled="!sellerDrafts[order.id]?.trim()">Send</button>
+            </form>
+          </section>
+
+          <section class="message-section">
             <span class="section-label">CUSTOMER MESSAGES</span>
-            <div v-if="order.messages?.length" class="message-list">
-              <div v-for="(message, index) in order.messages" :key="`${message.sentAt}-${index}`"
+            <div v-if="order.messages?.some((message) => !message.channel || message.channel === 'delivery')" class="message-list">
+              <div v-for="(message, index) in order.messages.filter((item) => !item.channel || item.channel === 'delivery')" :key="`${message.sentAt}-${index}`"
                 class="message-bubble" :class="{ own: message.sender === 'rider' }">
                 <b>{{ message.sender === 'rider' ? 'You' : order.customerName || 'Customer' }}</b>
                 <p>{{ message.text }}</p><small>{{ formatDateTime(message.sentAt) }}</small>
@@ -145,6 +162,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
+import ChangePasswordForm from './ChangePasswordForm.vue'
 import { locationOutline, personCircleOutline } from 'ionicons/icons'
 import type { OrderMessage, OrderRecord } from '../data/mockData'
 
@@ -162,6 +180,7 @@ const emit = defineEmits<{
 
 const tab = ref<'active' | 'history'>('active')
 const drafts = reactive<Record<string, string>>({})
+const sellerDrafts = reactive<Record<string, string>>({})
 const errors = reactive<Record<string, string>>({})
 const profileOpen = ref(false)
 const accountMenuOpen = ref(false)
@@ -201,8 +220,14 @@ function completeDelivery(order: OrderRecord) {
 function sendMessage(order: OrderRecord) {
   const text = drafts[order.id]?.trim()
   if (!text) return
-  emit('message', order.id, { sender: 'rider', text, sentAt: new Date().toISOString() })
+  emit('message', order.id, { sender: 'rider', channel: 'delivery', text, sentAt: new Date().toISOString() })
   drafts[order.id] = ''
+}
+function sendSellerMessage(order: OrderRecord) {
+  const text = sellerDrafts[order.id]?.trim()
+  if (!text) return
+  emit('message', order.id, { sender: 'rider', channel: 'rider-seller', text, sentAt: new Date().toISOString() })
+  sellerDrafts[order.id] = ''
 }
 function openProfile() {
   accountMenuOpen.value = false
@@ -325,7 +350,7 @@ function formatDateTime(value: string) {
 .account-menu > button { padding: 9px; border: 0; border-radius: 8px; background: transparent; color: #644f47; text-align: left; }
 .account-menu > button:hover { background: #fff5f2; }
 .profile-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: #2e201f70; }
-.profile-dialog { position: relative; width: min(420px, 100%); padding: 25px; border: 1px solid #f0e6e0; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px #39231f30; }
+.profile-dialog { position: relative; width: min(420px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 25px; border: 1px solid #f0e6e0; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px #39231f30; }
 .profile-close { position: absolute; top: 12px; right: 14px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #fbf3f0; color: #705f58; cursor: pointer; font-size: 22px; }
 .profile-dialog h2 { margin: 6px 0 18px; color: #3e2e2a; font: 700 24px var(--font-head); }
 .rider-edit-photo { display: flex; align-items: center; gap: 12px; margin: -4px 0 16px; }

@@ -45,6 +45,8 @@ export interface DbProduct {
   auto_reorder: boolean
   color: string | null
   image: string | null
+  slot: string | null
+  fit: unknown
   sold: number
   active: boolean
   created_at: string
@@ -107,7 +109,8 @@ export interface DbOrderItem {
 export interface DbOrderMessage {
   id: string
   order_id: string
-  sender: 'rider' | 'customer'
+  sender: 'rider' | 'customer' | 'seller'
+  channel: 'delivery' | 'buyer-seller' | 'rider-seller'
   sender_id: string | null
   text: string
   created_at: string
