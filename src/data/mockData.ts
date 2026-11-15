@@ -40,6 +40,10 @@ function slotFromDetails(details: string): Slot | undefined {
   return undefined
 }
 export function getProductSlot(product: { name: string; slot?: Slot; cat?: string; type?: string }): Slot | undefined {
+  const normalizedName = product.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  if (normalizedName.includes('y2k women fairy grunge')) return 'top'
+  if (normalizedName.includes('high waist slim skirt')) return 'bottom'
+
   const typeDetails = (product.type ?? '').toLowerCase()
   if (/\b(bags?|handbags?|accessories)\b/.test(typeDetails)) return undefined
   const typeSlot = slotFromDetails(typeDetails)

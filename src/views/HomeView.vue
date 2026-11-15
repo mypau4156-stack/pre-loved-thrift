@@ -6,7 +6,6 @@
         </div>
         <div v-if="!dashboardOpen && !sellerOpen && !riderOpen && !cartOpen" class="store-announcements">
           <div class="elfsight-app-dd1fc735-75ea-4ab8-b6f1-67d55ec594d5" data-elfsight-app-lazy></div>
-          <div class="shipping-announcement">Thoughtfully thrifted style · Free shipping on orders over ₱2,900</div>
         </div>
         <AppHeader v-if="!sellerOpen && !riderOpen" :user="user" :wish-count="wished.length" :cart-count="cart.length"
           :search-open="searchOpen" :profile-open="dashboardOpen || authOpen" :dashboard-mode="dashboardOpen"
@@ -31,7 +30,7 @@
       <UserDashboard v-if="user" :key="dashboardView" v-show="dashboardOpen" :user="user" :wishlist="wished" :cart-count="cart.length"
         :orders="orders" :products="dashboardProducts" :categories="categories" :initial-view="dashboardView"
         @storefront="dashboardOpen = false"
-        @add-cart="dashboardAddToCart" @toggle-wish="dashboardToggleWish"
+        @add-cart="dashboardAddToCart" @buy-again="buyAgain" @toggle-wish="dashboardToggleWish"
         @update-user="onProfileUpdate" @message="addOrderMessage" @message-seller="sellerChatOpen = true" />
       <SellerDashboard v-if="sellerUser && sellerOpen" :user="sellerUser" :orders="sellerOrders" :riders="registeredRiders"
         @logout="logout" @profile-update="onSellerProfileUpdate"
@@ -456,6 +455,30 @@ const reportAddToCartError = (error: unknown) => {
 }
 const addToCart = (p: Product) => needLogin(() => { void addCartItem(p).catch(reportAddToCartError) })
 
+async function buyAgain(items: CartItem[]) {
+  if (!user.value || !items.length) return
+
+  try {
+    let addedItems = 0
+    for (const item of items) {
+      const alreadyInCart = cart.value.some(existing =>
+        String(existing.id) === String(item.id) && existing.size === item.size)
+      if (alreadyInCart) continue
+
+      cart.value.push(await addCartItemRecord(user.value.id, {
+        ...item,
+        rowId: undefined,
+        selected: true
+      }))
+      addedItems += 1
+    }
+
+    if (addedItems > 0) showCartToast()
+  } catch (error) {
+    await showError('Unable to buy this order again', error)
+  }
+}
+
 const removeWish = async (id: CartItem['id']) => {
   const item = wished.value.find(w => String(w.id) === String(id))
   if (!item) return
@@ -868,16 +891,6 @@ async function navigateStorefront(id: string) {
   background: rgba(255,255,255,.14);
   font-size: 11px;
 }
-.shipping-announcement {
-  min-height: 38px;
-  display: grid;
-  place-items: center;
-  padding: 8px 16px;
-  background: #fae2df;
-  color: #bd5b58;
-  text-align: center;
-  font: 600 12px var(--font-body);
-}
 .storefront-chat-launcher {
   position: absolute;
   right: max(20px, env(safe-area-inset-right));
@@ -1052,7 +1065,6 @@ async function navigateStorefront(id: string) {
   to { opacity: 1; transform: translateY(0); }
 }
 @media (max-width: 520px) {
-  .shipping-announcement { min-height: 34px; font-size: 10px; }
   .cart-toast { right: 16px; bottom: 16px; }
 }
 </style>

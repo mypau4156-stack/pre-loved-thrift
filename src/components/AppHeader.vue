@@ -175,7 +175,6 @@ const emit = defineEmits<{
 
 const active = ref("top"),
     accountMenuOpen = ref(false);
-let lock = 0;
 const openCart = () => (props.user ? emit("open-cart") : emit("open-auth"));
 const openWishlist = () => (props.user ? emit("open-wish") : emit("open-auth"));
 const openDashboard = () => {
@@ -186,34 +185,49 @@ const content = () =>
     document.querySelector("ion-content") as HTMLElement | null;
 function go(id: string) {
     active.value = id;
-    lock = Date.now() + 800;
     emit("navigate", id);
 }
-function spy(e: Event) {
-    if (Date.now() < lock) return;
-    const el = e.target as HTMLElement;
+function spy() {
+    if (!scroller) return;
+    if (
+        scroller.scrollTop + scroller.clientHeight >=
+        scroller.scrollHeight - 4
+    ) {
+        active.value = "contact";
+        return;
+    }
+
+    const headerBottom =
+        document.querySelector(".hdr")?.getBoundingClientRect().bottom ?? 0;
     let cur = "top";
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 4) cur = "contact";
-    else
-        for (const n of nav.slice(1)) {
-            const t = document.getElementById(n.id);
-            if (t && t.getBoundingClientRect().top <= window.innerHeight * 0.35)
-                cur = n.id;
+    for (const n of nav.slice(1)) {
+        const section = document.getElementById(n.id);
+        if (
+            section &&
+            section.getBoundingClientRect().top <= headerBottom + 8
+        ) {
+            cur = n.id;
         }
+    }
     active.value = cur;
 }
 let scroller: HTMLElement | null = null;
-onMounted(async () => {
+onMounted(() => {
     try {
         const c = content();
         scroller =
             c?.shadowRoot?.querySelector<HTMLElement>(".inner-scroll") ?? null;
         scroller?.addEventListener("scroll", spy, { passive: true });
+        window.addEventListener("resize", spy);
+        spy();
     } catch {
         /* nav still works without scroll tracking */
     }
 });
-onBeforeUnmount(() => scroller?.removeEventListener("scroll", spy));
+onBeforeUnmount(() => {
+    scroller?.removeEventListener("scroll", spy);
+    window.removeEventListener("resize", spy);
+});
 </script>
 <style scoped>
 .hdr {

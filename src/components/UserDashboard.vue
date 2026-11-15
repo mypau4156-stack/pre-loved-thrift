@@ -168,7 +168,7 @@
                   </form>
                 </section>
 
-                <button class="buy-again" type="button">Buy again</button>
+                <button class="buy-again" type="button" @click="$emit('buy-again', order.items)">Buy again</button>
               </article>
             </div>
           </section>
@@ -388,6 +388,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'storefront'): void
   (event: 'add-cart', product: Product): void
+  (event: 'buy-again', items: CartItem[]): void
   (event: 'toggle-wish', product: Product): void
   (event: 'update-user', user: { name: string; email: string; phone?: string; address?: string; avatar?: string }): void
   (event: 'message', id: string, message: OrderMessage): void

@@ -113,21 +113,17 @@ function isWorn(item: CartItem) {
 function wear(g: CartItem) {
  if (!g.slot) return
  const w = { ...worn.value }
- const targetSlot: Slot = g.slot === 'dress' && w.bottom ? 'top' : g.slot
- const current = w[targetSlot]
+ const current = w[g.slot]
  if (current && String(current.id) === String(g.id)) {
-  delete w[targetSlot]
+  delete w[g.slot]
  } else {
-  if (targetSlot === 'bottom' && w.dress) {
-   if (!w.top) w.top = { ...w.dress, slot: 'top' }
-   delete w.dress
-  } else if (targetSlot === 'dress') {
+  if (g.slot === 'dress') {
    delete w.top
    delete w.bottom
-  } else if (targetSlot === 'top' || targetSlot === 'bottom') {
+  } else if (g.slot === 'top' || g.slot === 'bottom') {
    delete w.dress
   }
-  w[targetSlot] = targetSlot === g.slot ? g : { ...g, slot: targetSlot }
+  w[g.slot] = g
  }
  worn.value = w
 }
