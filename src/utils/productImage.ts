@@ -1,7 +1,7 @@
 import type { GarmentImageFit } from '../data/mockData'
 
-const MAX_IMAGE_DIMENSION = 960
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024
+const MAX_IMAGE_DIMENSION = 720
+const MAX_IMAGE_BYTES = 512 * 1024
 
 export interface PreparedProductImage {
   dataUrl: string

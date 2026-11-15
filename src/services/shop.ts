@@ -100,6 +100,7 @@ function mapOrder(row: DbOrder): OrderRecord {
     total: money(row.total),
     payment: row.payment,
     paymentProof: row.payment_proof || undefined,
+    paymentVerifiedAt: row.payment_verified_at || undefined,
     status: row.status,
     rider: row.rider_name || undefined,
     riderEmail: row.rider_email || undefined,
@@ -375,6 +376,14 @@ export async function listRiderOrders(riderId: string): Promise<SellerOrderRecor
 export async function updateOrderStatus(dbId: string, status: string): Promise<void> {
   const { error } = await requireSupabase().from('orders').update({ status }).eq('id', dbId)
   if (error) throw error
+}
+
+export async function confirmGcashPaymentReceived(dbId: string): Promise<string> {
+  const { data, error } = await requireSupabase()
+    .rpc('confirm_gcash_payment_received', { p_order_id: dbId })
+  if (error) throw error
+  if (typeof data !== 'string') throw new Error('Supabase did not confirm the GCash payment.')
+  return data
 }
 
 export async function assignOrderRider(dbId: string, rider: RiderSummary): Promise<void> {

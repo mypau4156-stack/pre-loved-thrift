@@ -44,6 +44,7 @@
           <div class="overview-grid">
             <section class="panel">
               <div class="panel-title"><div><span class="eyebrow">SHOP PERFORMANCE</span><h2>Sales analytics</h2></div></div>
+              <p v-if="inventoryImageError" class="form-error" role="alert">{{ inventoryImageError }}</p>
               <div class="sales-summary">
                 <div><small>Units sold</small><b>{{ inventoryUnitsSold }}</b></div>
                 <div><small>Products tracked</small><b>{{ inventory.length }}</b></div>
@@ -54,7 +55,8 @@
                   <span class="sales-caption"><ion-icon :icon="trendingUpOutline" /> Fast-selling products</span>
                   <template v-if="fastSellingProducts.length">
                     <div v-for="product in fastSellingProducts" :key="product.id" class="dress-sales-row">
-                      <img :src="product.img || fallbackImage" :alt="product.name" />
+                      <img v-if="product.img" :src="product.img" :alt="product.name" />
+                      <span v-else class="seller-product-photo-placeholder" aria-hidden="true"><ion-icon :icon="imageOutline" /></span>
                       <span><b>{{ product.name }}</b><small>{{ product.category }}</small></span>
                       <strong>{{ product.sold }} sold</strong>
                     </div>
@@ -65,7 +67,8 @@
                   <span class="sales-caption"><ion-icon :icon="trendingDownOutline" /> Products not sold yet</span>
                   <template v-if="unsoldProducts.length">
                     <div v-for="product in unsoldProducts" :key="product.id" class="dress-sales-row unsold">
-                      <img :src="product.img || fallbackImage" :alt="product.name" />
+                      <img v-if="product.img" :src="product.img" :alt="product.name" />
+                      <span v-else class="seller-product-photo-placeholder" aria-hidden="true"><ion-icon :icon="imageOutline" /></span>
                       <span><b>{{ product.name }}</b><small>{{ product.category }}</small></span>
                       <strong>0 sold</strong>
                     </div>
@@ -79,7 +82,8 @@
                 <button class="text-button" @click="tab = 'alerts'">View all</button></div>
               <div v-if="!lowStock.length" class="empty-note">Everything is stocked above its reorder point.</div>
               <div v-for="product in lowStock.slice(0, 3)" :key="product.id" class="restock-preview">
-                <img :src="product.img || fallbackImage" :alt="product.name" />
+                <img v-if="product.img" :src="product.img" :alt="product.name" />
+                <span v-else class="seller-product-photo-placeholder" aria-hidden="true"><ion-icon :icon="imageOutline" /></span>
                 <div><b>{{ product.name }}</b><span>{{ product.stock }} left · reorder at {{ product.reorderPoint }}</span></div>
                 <ion-icon :icon="alertCircleOutline" />
               </div>
@@ -88,7 +92,7 @@
           <section class="panel recent-orders">
             <div class="panel-title"><div><span class="eyebrow">LATEST ACTIVITY</span><h2>Recent orders</h2></div>
               <button class="text-button" @click="tab = 'orders'">All orders</button></div>
-            <OrdersTable v-if="orders.length" :orders="orders.slice(0, 5)" :riders="props.riders" @status-change="updateOrderStatus" @rider-change="updateOrderRider" />
+            <OrdersTable v-if="orders.length" :orders="orders.slice(0, 5)" :riders="props.riders" @status-change="updateOrderStatus" @rider-change="updateOrderRider" @payment-proof="openPaymentProof" />
             <div v-else class="empty-note">No orders yet. Orders placed from the storefront will appear here.</div>
           </section>
         </template>
@@ -111,16 +115,22 @@
             <button class="primary-button submit-button" type="submit"><ion-icon :icon="addOutline" /> Add product</button>
           </form>
         </section>
-        <section class="panel inventory-panel">
+        <section class="panel inventory-panel" :class="{ 'inventory-panel-paginated': filteredInventory.length > inventoryPageSize }">
           <div class="panel-title"><div><span class="eyebrow">SHOP CATALOGUE</span><h2>Inventory <small>({{ inventory.length }})</small></h2></div>
             <label class="search-field"><ion-icon :icon="searchOutline" /><input v-model="inventoryQuery" placeholder="Find a product" /></label></div>
           <p v-if="inventoryError" class="form-error inventory-error" role="alert">{{ inventoryError }}</p>
+          <p v-if="inventoryImageError" class="form-error inventory-error" role="alert">{{ inventoryImageError }}</p>
           <div class="table-wrap">
             <table class="inventory-table">
               <thead><tr><th>Product</th><th>Type</th><th>Price</th><th>Stock</th><th>Reorder at</th><th>Auto-reorder</th><th></th></tr></thead>
               <tbody>
-                <tr v-for="product in filteredInventory" :key="product.id">
-                  <td><div class="inventory-product"><img :src="product.img || fallbackImage" :alt="product.name" /><div><b>{{ product.name }}</b><small>{{ product.category }} · {{ product.sold }} sold</small></div></div></td>
+                <tr v-if="inventoryLoading && !inventory.length"><td colspan="7"><div class="inventory-loading" role="status"><span></span>Loading your inventory…</div></td></tr>
+                <tr v-else v-for="product in paginatedInventory" :key="product.id">
+                  <td><div class="inventory-product">
+                    <img v-if="product.img" :src="product.img" :alt="product.name" />
+                    <span v-else class="inventory-product-photo-placeholder" aria-hidden="true"><ion-icon :icon="imageOutline" /></span>
+                    <div><b>{{ product.name }}</b><small>{{ product.category }} · {{ product.sold }} sold</small></div>
+                  </div></td>
                   <td><select v-model="product.type" :aria-label="`Garment type for ${product.name}`" @change="saveInventory(product)"><option value="Clothing">Clothing (auto-detect)</option><option value="Top">Top</option><option value="Bottom">Bottom</option><option value="Dress">Dress</option><option value="Shoes">Shoes</option><option value="Accessories">Accessories</option><option value="Bag">Bag</option></select></td>
                   <td><label class="table-input"><span>₱</span><input v-model.number="product.price" type="number" min="1" step="1" aria-label="Product price" @change="saveInventory(product)" /></label></td>
                   <td><input v-model.number="product.stock" class="number-input" type="number" min="0" aria-label="Stock quantity" @change="saveInventory(product)" /></td>
@@ -128,9 +138,17 @@
                   <td><label class="switch"><input :checked="product.autoReorder" type="checkbox" :aria-label="`Auto-reorder ${product.name}`" @change="toggleAutoReorder(product, $event)" /><span></span></label></td>
                   <td><button class="icon-button danger" :aria-label="`Delete ${product.name}`" @click="deleteProduct(product.id)"><ion-icon :icon="trashOutline" /></button></td>
                 </tr>
-                <tr v-if="!filteredInventory.length"><td colspan="7" class="empty-cell">No products match your search.</td></tr>
+                <tr v-if="!inventoryLoading && !inventoryError && !filteredInventory.length"><td colspan="7" class="empty-cell">No products match your search.</td></tr>
               </tbody>
             </table>
+          </div>
+          <div v-if="filteredInventory.length > inventoryPageSize" class="inventory-pagination">
+            <span>Showing {{ inventoryPageStart }}–{{ inventoryPageEnd }} of {{ filteredInventory.length }}</span>
+            <div>
+              <button type="button" :disabled="inventoryPage === 0" aria-label="Previous inventory page" @click="changeInventoryPage(-1)">Previous</button>
+              <span>Page {{ inventoryPage + 1 }} of {{ inventoryPageCount }}</span>
+              <button type="button" :disabled="inventoryPage + 1 >= inventoryPageCount" aria-label="Next inventory page" @click="changeInventoryPage(1)">Next</button>
+            </div>
           </div>
         </section>
         </template>
@@ -141,7 +159,7 @@
             <p>Confirm orders, assign a delivery rider, and update fulfilment status. Assigned rider details appear in the customer dashboard after confirmation.</p>
           </div>
           <section class="panel order-processing-panel">
-            <OrdersTable v-if="orders.length" :orders="orders" :riders="props.riders" @status-change="updateOrderStatus" @rider-change="updateOrderRider" />
+            <OrdersTable v-if="orders.length" :orders="orders" :riders="props.riders" @status-change="updateOrderStatus" @rider-change="updateOrderRider" @payment-proof="openPaymentProof" />
             <div v-else class="empty-note large-empty"><span class="empty-symbol"><ion-icon :icon="receiptOutline" /></span><b>No orders yet</b><p>Customer purchases will appear in this list.</p></div>
           </section>
         </template>
@@ -161,7 +179,8 @@
               <p>Customer reviews for your products will appear here.</p>
             </div>
             <article v-for="review in productReviews" :key="review.id" class="seller-review-card">
-              <img :src="reviewProduct(review.productId)?.img || fallbackImage" :alt="reviewProduct(review.productId)?.name || 'Reviewed product'" />
+              <img v-if="reviewProduct(review.productId)?.img" :src="reviewProduct(review.productId)?.img" :alt="reviewProduct(review.productId)?.name || 'Reviewed product'" />
+              <span v-else class="seller-product-photo-placeholder" aria-hidden="true"><ion-icon :icon="imageOutline" /></span>
               <div class="seller-review-copy">
                 <div class="seller-review-top">
                   <div><b>{{ reviewProduct(review.productId)?.name || 'Reviewed product' }}</b><small>Customer review · {{ formatDate(review.createdAt) }}</small></div>
@@ -193,7 +212,8 @@
             <div v-if="!lowStock.length" class="empty-note large-empty"><span class="empty-symbol"><ion-icon :icon="checkmarkCircleOutline" /></span><b>No restock alerts</b><p>Your products are stocked above their reorder points.</p></div>
             <template v-else>
               <article v-for="product in lowStock" :key="product.id" class="alert-row">
-                <img :src="product.img || fallbackImage" :alt="product.name" />
+                <img v-if="product.img" :src="product.img" :alt="product.name" />
+                <span v-else class="seller-product-photo-placeholder" aria-hidden="true"><ion-icon :icon="imageOutline" /></span>
                 <div class="alert-copy"><b>{{ product.name }}</b><span>{{ product.stock }} in stock · reorder point {{ product.reorderPoint }}</span></div>
                 <button class="primary-button" :disabled="restockRequestsInProgress.includes(product.id)" @click="requestRestock(product)">
                   <ion-icon :icon="refreshOutline" />{{ restockRequestsInProgress.includes(product.id) ? 'Sending…' : hasPendingReorderRequest(product.id) ? 'Already requested' : 'Request restock' }}
@@ -205,7 +225,8 @@
           <section v-if="activeReorderRequests.length" class="panel reorder-history">
             <div class="panel-title"><div><span class="eyebrow">MANUAL RESTOCK</span><h2>Pending reorder requests</h2></div></div>
             <article v-for="request in activeReorderRequests" :key="request.id" class="reorder-history-row">
-              <img :src="inventory.find((product) => product.id === request.productId)?.img || fallbackImage" alt="" />
+              <img v-if="inventory.find((product) => product.id === request.productId)?.img" :src="inventory.find((product) => product.id === request.productId)?.img" alt="" />
+              <span v-else class="seller-product-photo-placeholder" aria-hidden="true"><ion-icon :icon="imageOutline" /></span>
               <div><b>{{ inventory.find((product) => product.id === request.productId)?.name || 'Product' }}</b>
                 <small>Stock {{ request.currentStock }} · reorder point {{ request.reorderPoint }} · {{ formatDate(request.createdAt) }}</small></div>
               <span class="request-status" :class="`status-${request.status.toLowerCase()}`">{{ request.status }}</span>
@@ -266,27 +287,34 @@
       </header>
       <div class="seller-messenger-body">
         <p v-if="storeChatError" class="form-error" role="alert">{{ storeChatError }}</p>
-        <article v-for="conversation in storeChats" :key="conversation.id" class="messenger-conversation">
-          <div class="messenger-conversation-heading"><b>Buyer · {{ conversation.buyerName }}</b></div>
-          <div v-if="conversation.messages.length" class="inbox-message-list">
-            <div v-for="message in conversation.messages" :key="message.id"
-              class="inbox-message" :class="{ own: message.senderRole === 'seller' }">
-              <b v-if="message.senderRole === 'seller'">You</b>
-              <p>{{ message.text }}</p><small>{{ formatTime(message.sentAt) }}</small>
+        <div class="seller-message-tabs" role="tablist" aria-label="Message type">
+          <button type="button" role="tab" :aria-selected="activeMessageTab === 'buyer'" :class="{ active: activeMessageTab === 'buyer' }" @click="activeMessageTab = 'buyer'">
+            Buyers <small v-if="buyerInboxCount">{{ buyerInboxCount }}</small>
+          </button>
+          <button type="button" role="tab" :aria-selected="activeMessageTab === 'rider'" :class="{ active: activeMessageTab === 'rider' }" @click="activeMessageTab = 'rider'">
+            Riders <small v-if="riderInboxCount">{{ riderInboxCount }}</small>
+          </button>
+        </div>
+        <template v-if="activeMessageTab === 'buyer'">
+          <article v-for="conversation in storeChats" :key="conversation.id" class="messenger-conversation">
+            <div class="messenger-conversation-heading"><b>Buyer · {{ conversation.buyerName }}</b></div>
+            <div v-if="conversation.messages.length" class="inbox-message-list">
+              <div v-for="message in conversation.messages" :key="message.id"
+                class="inbox-message" :class="{ own: message.senderRole === 'seller' }">
+                <b v-if="message.senderRole === 'seller'">You</b>
+                <p>{{ message.text }}</p><small>{{ formatTime(message.sentAt) }}</small>
+              </div>
             </div>
-          </div>
-          <p v-else class="empty-note">No messages in this conversation yet.</p>
-          <form class="inbox-reply" @submit.prevent="replyToStoreChat(conversation.id)">
-            <input v-model="storeChatDrafts[conversation.id]" maxlength="500" placeholder="Reply to buyer…" :aria-label="`Reply to ${conversation.buyerName}`" />
-            <button type="submit" :disabled="!storeChatDrafts[conversation.id]?.trim()">Send</button>
-          </form>
-        </article>
-        <article v-for="order in sellerMessageOrders" :key="order.id" class="messenger-conversation">
-          <div class="messenger-conversation-heading"><b>Buyer · {{ order.buyer || order.customerName || 'Buyer' }}</b><small>Order {{ order.id }}</small></div>
-          <section v-if="order.messages?.some((message) => message.channel === 'buyer-seller')" class="inbox-thread">
-            <h3>Buyer</h3>
+            <p v-else class="empty-note">No messages in this conversation yet.</p>
+            <form class="inbox-reply" @submit.prevent="replyToStoreChat(conversation.id)">
+              <input v-model="storeChatDrafts[conversation.id]" maxlength="500" placeholder="Reply to buyer…" :aria-label="`Reply to ${conversation.buyerName}`" />
+              <button type="submit" :disabled="!storeChatDrafts[conversation.id]?.trim()">Send</button>
+            </form>
+          </article>
+          <article v-for="order in buyerMessageOrders" :key="order.id" class="messenger-conversation">
+            <div class="messenger-conversation-heading"><b>Buyer · {{ order.buyer || order.customerName || 'Buyer' }}</b><small>Order {{ order.id }}</small></div>
             <div class="inbox-message-list">
-              <div v-for="(message, index) in order.messages.filter((item) => item.channel === 'buyer-seller')" :key="`${message.sentAt}-${index}`"
+              <div v-for="(message, index) in (order.messages ?? []).filter((item) => item.channel === 'buyer-seller')" :key="`${message.sentAt}-${index}`"
                 class="inbox-message" :class="{ own: message.sender === 'seller' }">
                 <b v-if="message.sender === 'seller'">You</b>
                 <p>{{ message.text }}</p><small>{{ formatTime(message.sentAt) }}</small>
@@ -296,11 +324,16 @@
               <input v-model="sellerMessageDrafts[`${order.id}:buyer-seller`]" maxlength="500" placeholder="Reply to buyer…" :aria-label="`Reply to buyer about ${order.id}`" />
               <button type="submit" :disabled="!sellerMessageDrafts[`${order.id}:buyer-seller`]?.trim()">Send</button>
             </form>
-          </section>
-          <section v-if="order.rider || order.riderEmail || order.messages?.some((message) => message.channel === 'rider-seller')" class="inbox-thread">
-            <h3>Rider <small>{{ order.rider || 'Assigned rider' }}</small></h3>
+          </article>
+          <div v-if="!storeChats.length && !buyerMessageOrders.length && !storeChatError" class="messenger-empty">
+            <ion-icon :icon="chatbubbleOutline" /><b>No buyer conversations</b><p>Buyer messages will appear here.</p>
+          </div>
+        </template>
+        <template v-else>
+          <article v-for="order in riderMessageOrders" :key="order.id" class="messenger-conversation">
+            <div class="messenger-conversation-heading"><b>Rider · {{ order.rider || 'Assigned rider' }}</b><small>Order {{ order.id }}</small></div>
             <div v-if="order.messages?.some((message) => message.channel === 'rider-seller')" class="inbox-message-list">
-              <div v-for="(message, index) in order.messages.filter((item) => item.channel === 'rider-seller')" :key="`${message.sentAt}-${index}`"
+              <div v-for="(message, index) in (order.messages ?? []).filter((item) => item.channel === 'rider-seller')" :key="`${message.sentAt}-${index}`"
                 class="inbox-message" :class="{ own: message.sender === 'seller' }">
                 <b>{{ message.sender === 'seller' ? 'You' : order.rider || 'Rider' }}</b>
                 <p>{{ message.text }}</p><small>{{ formatTime(message.sentAt) }}</small>
@@ -311,11 +344,11 @@
               <input v-model="sellerMessageDrafts[`${order.id}:rider-seller`]" maxlength="500" placeholder="Reply to rider…" :aria-label="`Reply to rider about ${order.id}`" />
               <button type="submit" :disabled="!sellerMessageDrafts[`${order.id}:rider-seller`]?.trim()">Send</button>
             </form>
-          </section>
-        </article>
-        <div v-if="!sellerMessageOrders.length && !storeChats.length && !storeChatError" class="messenger-empty">
-          <ion-icon :icon="chatbubbleOutline" /><b>No conversations yet</b><p>Buyer and rider messages will show here.</p>
-        </div>
+          </article>
+          <div v-if="!riderMessageOrders.length" class="messenger-empty">
+            <ion-icon :icon="chatbubbleOutline" /><b>No rider conversations</b><p>Rider messages will appear here.</p>
+          </div>
+        </template>
       </div>
     </aside>
     <button class="seller-messenger-launcher" type="button" :aria-expanded="messengerOpen"
@@ -331,6 +364,23 @@
         <button type="button" class="seller-review-photo-close" aria-label="Close photo preview" @click="closeReviewPhoto">×</button>
         <img :src="reviewPhotoOpen" alt="Full-size customer review photo" />
       </div>
+    </div>
+
+    <div v-if="paymentProofOrder" class="seller-review-photo-overlay" role="dialog" aria-modal="true" aria-labelledby="seller-payment-proof-title" @click.self="closePaymentProof">
+      <section class="seller-payment-proof-viewer">
+        <button type="button" class="seller-review-photo-close" aria-label="Close payment proof" @click="closePaymentProof">×</button>
+        <h2 id="seller-payment-proof-title">GCash payment proof</h2>
+        <p>Order {{ paymentProofOrder.id }} · {{ paymentProofOrder.buyer }}</p>
+        <img :src="paymentProofOrder.paymentProof" alt="Buyer-provided GCash payment screenshot" />
+        <p v-if="paymentConfirmationError" class="form-error" role="alert">{{ paymentConfirmationError }}</p>
+        <div class="seller-payment-proof-actions">
+          <span v-if="paymentProofOrder.paymentVerifiedAt" class="payment-confirmed-label">Payment received and approved</span>
+          <button v-else type="button" class="primary-button" :disabled="paymentConfirmationLoading" @click="confirmPaymentReceived">
+            {{ paymentConfirmationLoading ? 'Saving approval…' : 'Approve · payment received' }}
+          </button>
+          <button type="button" class="text-button" @click="closePaymentProof">Close</button>
+        </div>
+      </section>
     </div>
 
     <LogoutConfirmation :open="logoutConfirmationOpen" account-type="seller"
@@ -349,7 +399,8 @@
         </p>
         <div class="reorder-popup-items">
           <div v-for="product in lowStock.slice(0, 3)" :key="product.id" class="reorder-popup-item">
-            <img :src="product.img || fallbackImage" :alt="product.name" />
+            <img v-if="product.img" :src="product.img" :alt="product.name" />
+            <span v-else class="seller-product-photo-placeholder" aria-hidden="true"><ion-icon :icon="imageOutline" /></span>
             <span class="reorder-popup-product"><b>{{ product.name }}</b><small>Reorder point: {{ product.reorderPoint }}</small></span>
             <span class="reorder-popup-stock">{{ product.stock }} left</span>
           </div>
@@ -369,7 +420,7 @@ import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref, wa
 import { IonIcon, alertController } from '@ionic/vue'
 import ChangePasswordForm from './ChangePasswordForm.vue'
 import {
-  addOutline, alertCircleOutline, chatbubbleOutline, checkmarkCircleOutline, closeOutline, cubeOutline, gridOutline,
+  addOutline, alertCircleOutline, chatbubbleOutline, checkmarkCircleOutline, closeOutline, cubeOutline, gridOutline, imageOutline,
   logOutOutline, personOutline, receiptOutline, refreshOutline, searchOutline, starOutline,
   trashOutline, trendingDownOutline, trendingUpOutline, walletOutline
 } from 'ionicons/icons'
@@ -385,6 +436,7 @@ import {
   listMyReorderRequests,
   listMyActivity,
   listMyProducts,
+  listSellerProductImages,
   createReorderRequest,
   seedMyInventory,
   type ReorderRequest,
@@ -394,6 +446,7 @@ import {
 } from '../services/seller'
 import { listSellerProductReviews, type ProductReview } from '../services/reviews'
 import { listSellerStoreChats, sendStoreChatMessage, type StoreChatConversation } from '../services/storeChat'
+import { confirmGcashPaymentReceived } from '../services/shop'
 import { supabase } from '../utils/supabase'
 import type { AppUser, RiderSummary } from '../types/database'
 
@@ -405,10 +458,14 @@ const emit = defineEmits<{
   (event: 'status-change', id: string, status: string): void
   (event: 'rider-change', id: string, rider: RiderAccount): void
   (event: 'message', id: string, message: OrderMessage): void
+  (event: 'payment-confirmed', id: string, verifiedAt: string): void
 }>()
 const fallbackImage = '/assets/category-1.png'
 const tab = ref('inventory')
+const inventoryPageSize = 8
+const inventoryPage = ref(0)
 const messengerOpen = ref(false)
+const activeMessageTab = ref<'buyer' | 'rider'>('buyer')
 const reorderPopupOpen = ref(false)
 const sellerMessageDrafts = reactive<Record<string, string>>({})
 const storeChatDrafts = reactive<Record<string, string>>({})
@@ -432,11 +489,17 @@ watch(() => props.user, (user) => {
   profileDraft.avatar = user.avatar || ''
 }, { deep: true })
 const inventory = ref<InventoryProduct[]>([])
+const inventoryLoading = ref(true)
 const productReviews = ref<ProductReview[]>([])
 const reviewsError = ref('')
 const reviewPhotoOpen = ref('')
+const paymentProofOrder = ref<SellerOrderRecord | null>(null)
+const paymentConfirmationLoading = ref(false)
+const paymentConfirmationError = ref('')
 const inventoryQuery = ref('')
 const inventoryError = ref('')
+const inventoryImageError = ref('')
+const inventoryImageRequests = new Set<string>()
 const reorderRequestError = ref('')
 const reorderRequestNotice = ref('')
 const restockRequestsInProgress = ref<string[]>([])
@@ -466,13 +529,17 @@ function defaultProductType(category: string) {
   return 'Top'
 }
 const orders = computed(() => props.orders)
-const sellerMessageOrders = computed(() => orders.value.filter((order) =>
+const buyerMessageOrders = computed(() => orders.value.filter((order) =>
+  order.messages?.some((message) => message.channel === 'buyer-seller')))
+const riderMessageOrders = computed(() => orders.value.filter((order) =>
   Boolean(order.rider?.trim() || order.riderEmail?.trim())
-  || order.messages?.some((message) => message.channel === 'buyer-seller' || message.channel === 'rider-seller')))
-const sellerInboxCount = computed(() => orders.value.reduce((total, order) =>
-  total + (order.messages?.filter((message) => message.sender !== 'seller'
-    && (message.channel === 'buyer-seller' || message.channel === 'rider-seller')).length ?? 0), 0)
+  || order.messages?.some((message) => message.channel === 'rider-seller')))
+const buyerInboxCount = computed(() => orders.value.reduce((total, order) =>
+  total + (order.messages?.filter((message) => message.sender !== 'seller' && message.channel === 'buyer-seller').length ?? 0), 0)
   + storeChats.value.reduce((total, conversation) => total + conversation.messages.filter(message => message.senderRole === 'buyer').length, 0))
+const riderInboxCount = computed(() => orders.value.reduce((total, order) =>
+  total + (order.messages?.filter((message) => message.sender !== 'seller' && message.channel === 'rider-seller').length ?? 0), 0))
+const sellerInboxCount = computed(() => buyerInboxCount.value + riderInboxCount.value)
 const averageReviewRating = computed(() => productReviews.value.length
   ? productReviews.value.reduce((sum, review) => sum + review.rating, 0) / productReviews.value.length
   : 0)
@@ -485,10 +552,56 @@ const activeReorderRequests = computed(() => reorderRequests.value.filter((reque
 }))
 const openReviewPhoto = (url: string) => { reviewPhotoOpen.value = url }
 const closeReviewPhoto = () => { reviewPhotoOpen.value = '' }
+function openPaymentProof(order: SellerOrderRecord) {
+  if (!order.paymentProof) return
+  paymentProofOrder.value = order
+  paymentConfirmationError.value = ''
+}
+function closePaymentProof() {
+  paymentProofOrder.value = null
+  paymentConfirmationError.value = ''
+}
+async function confirmPaymentReceived() {
+  const order = paymentProofOrder.value
+  if (!order?.dbId || !order.paymentProof || order.paymentVerifiedAt || paymentConfirmationLoading.value) return
+
+  paymentConfirmationError.value = ''
+  paymentConfirmationLoading.value = true
+  try {
+    const verifiedAt = await confirmGcashPaymentReceived(order.dbId)
+    paymentProofOrder.value = { ...order, paymentVerifiedAt: verifiedAt }
+    emit('payment-confirmed', order.id, verifiedAt)
+  } catch (error) {
+    console.error('Unable to confirm GCash payment.', error)
+    paymentConfirmationError.value = error instanceof Error ? error.message : 'Unable to confirm that payment was received.'
+  } finally {
+    paymentConfirmationLoading.value = false
+  }
+}
 const filteredInventory = computed(() => {
   const query = inventoryQuery.value.trim().toLowerCase()
   return query ? inventory.value.filter((product) => `${product.name} ${product.category}`.toLowerCase().includes(query)) : inventory.value
 })
+const inventoryPageCount = computed(() => Math.max(1, Math.ceil(filteredInventory.value.length / inventoryPageSize)))
+const paginatedInventory = computed(() => filteredInventory.value.slice(
+  inventoryPage.value * inventoryPageSize,
+  (inventoryPage.value + 1) * inventoryPageSize
+))
+const inventoryPageStart = computed(() => filteredInventory.value.length
+  ? inventoryPage.value * inventoryPageSize + 1
+  : 0)
+const inventoryPageEnd = computed(() => Math.min((inventoryPage.value + 1) * inventoryPageSize, filteredInventory.value.length))
+function changeInventoryPage(direction: -1 | 1) {
+  inventoryPage.value = Math.max(0, Math.min(inventoryPage.value + direction, inventoryPageCount.value - 1))
+}
+watch(inventoryQuery, () => { inventoryPage.value = 0 })
+watch(inventoryPageCount, (pageCount) => {
+  if (inventoryPage.value >= pageCount) inventoryPage.value = pageCount - 1
+})
+watch(() => paginatedInventory.value.map((product) => `${product.id}:${Boolean(product.img)}`).join(','), () => {
+  void loadVisibleInventoryImages()
+})
+watch(tab, () => { void loadVisibleInventoryImages() })
 const revenue = computed(() => orders.value
   .filter((order) => order.status === 'Delivered')
   .reduce((sum, order) => sum + (order.subtotal ?? order.total), 0))
@@ -523,7 +636,7 @@ const OrdersTable = defineComponent({
     orders: { type: Array as () => SellerOrderRecord[], required: true },
     riders: { type: Array as () => RiderAccount[], required: true }
   },
-  emits: ['status-change', 'rider-change'],
+  emits: ['status-change', 'rider-change', 'payment-proof'],
   setup(tableProps, { emit: emitTable }) {
     const riderDrafts = reactive<Record<string, string>>({})
     return () => h('div', { class: 'table-wrap orders-table-wrap' }, [
@@ -545,12 +658,12 @@ const OrdersTable = defineComponent({
           h('td', { class: 'order-payment' }, [
             h('span', order.payment === 'Unspecified' ? 'Not recorded' : order.payment),
             h('small', {
-              class: order.payment.startsWith('Card') ? 'payment-paid' : 'payment-pending'
-            }, order.payment === 'GCash' ? order.paymentProof ? 'Awaiting verification' : 'Proof missing' : order.payment.startsWith('Card') ? 'Paid' : order.payment === 'Cash on delivery' ? 'On delivery' : 'Pending'),
-            ...(order.paymentProof ? [h('a', {
-              href: order.paymentProof,
-              target: '_blank',
-              rel: 'noopener noreferrer'
+              class: order.payment.startsWith('Card') || order.paymentVerifiedAt ? 'payment-paid' : 'payment-pending'
+            }, order.payment === 'GCash' ? order.paymentProof ? order.paymentVerifiedAt ? 'Payment received' : 'Awaiting verification' : 'Proof missing' : order.payment.startsWith('Card') ? 'Paid' : order.payment === 'Cash on delivery' ? 'On delivery' : 'Pending'),
+            ...(order.paymentProof ? [h('button', {
+              type: 'button',
+              class: 'payment-proof-button',
+              onClick: () => emitTable('payment-proof', order)
             }, 'Review proof')] : [])
           ]),
           h('td', { class: 'order-rider' }, [
@@ -624,6 +737,7 @@ function viewReorderAlerts() {
 }
 
 async function loadInventory() {
+  inventoryLoading.value = true
   try {
     let rows = await listMyProducts(props.user.id)
     if (!rows.length) {
@@ -635,7 +749,46 @@ async function loadInventory() {
   } catch (error) {
     console.error('Unable to load seller inventory.', error)
     inventory.value = []
-    inventoryError.value = 'Seller inventory could not be loaded from Supabase.'
+    const reason = error instanceof Error ? error.message : 'Unknown Supabase error.'
+    inventoryError.value = `Seller inventory could not be loaded from Supabase: ${reason}`
+  } finally {
+    inventoryLoading.value = false
+  }
+}
+
+async function loadVisibleInventoryImages() {
+  const productsToLoad = tab.value === 'overview'
+    ? [...fastSellingProducts.value, ...unsoldProducts.value, ...lowStock.value.slice(0, 3)]
+    : tab.value === 'alerts'
+      ? [
+          ...lowStock.value.slice(0, 8),
+          ...activeReorderRequests.value.slice(0, 8)
+            .map((request) => inventory.value.find((product) => product.id === request.productId))
+            .filter((product): product is InventoryProduct => Boolean(product))
+        ]
+      : tab.value === 'reviews'
+        ? productReviews.value.slice(0, 8)
+          .map((review) => reviewProduct(review.productId))
+          .filter((product): product is InventoryProduct => Boolean(product))
+        : [...paginatedInventory.value, ...lowStock.value.slice(0, 3)]
+  const productIds = [...new Set(productsToLoad
+    .filter((product) => !product.img && !inventoryImageRequests.has(product.id))
+    .map((product) => product.id))]
+  if (!productIds.length) return
+
+  productIds.forEach((id) => inventoryImageRequests.add(id))
+  try {
+    const images = await listSellerProductImages(props.user.id, productIds)
+    inventory.value.forEach((product) => {
+      if (images[product.id]) product.img = images[product.id]
+    })
+    inventoryImageError.value = ''
+  } catch (error) {
+    console.error('Unable to load visible seller product images.', error)
+    const reason = error instanceof Error ? error.message : 'Unknown Supabase error.'
+    inventoryImageError.value = `Some inventory photos could not be loaded: ${reason}`
+  } finally {
+    productIds.forEach((id) => inventoryImageRequests.delete(id))
   }
 }
 
@@ -660,6 +813,7 @@ async function loadReorderRequests() {
 async function loadReviews() {
   try {
     productReviews.value = await listSellerProductReviews(inventory.value.map((product) => product.id))
+    if (tab.value === 'reviews') void loadVisibleInventoryImages()
   } catch (error) {
     console.error('Unable to load seller product reviews.', error)
     reviewsError.value = 'Customer reviews could not be loaded. Please try again later.'
@@ -994,7 +1148,11 @@ function formatTime(value: string) {
 .seller-messenger-header small { font-size: 10px; opacity: .9; }
 .seller-messenger-header button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #ffffff33; color: #fff; cursor: pointer; font-size: 24px; }
 .seller-messenger-body { min-height: 0; flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-.messenger-conversation { min-width: 0; min-height: 0; flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 10px; border: 1px solid #f0e6e0; border-radius: 14px; background: #fff; }
+.seller-message-tabs { position: sticky; top: -12px; z-index: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 4px 0 8px; background: #fbf9f6; }
+.seller-message-tabs button { min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #eadfd9; border-radius: 10px; background: #fff; color: #705f58; cursor: pointer; font: 700 11px var(--font-body); }
+.seller-message-tabs button.active { border-color: var(--coral); background: #f9e2df; color: var(--coral-dark); }
+.seller-message-tabs small { min-width: 18px; padding: 2px 5px; border-radius: 10px; background: var(--coral); color: #fff; text-align: center; font-size: 9px; }
+.messenger-conversation { min-width: 0; min-height: 0; flex: 0 0 auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; border: 1px solid #f0e6e0; border-radius: 14px; background: #fff; }
 .messenger-conversation-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 9px; border-bottom: 1px solid #f0e6e0; }
 .messenger-conversation-heading b { overflow: hidden; color: #493832; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .messenger-conversation-heading small { flex: 0 0 auto; color: #927d75; font-size: 9px; }
@@ -1009,7 +1167,7 @@ function formatTime(value: string) {
 .inbox-thread + .inbox-thread { margin-top: 14px; border-top: 1px solid #f0e6e0; }
 .inbox-thread h3 { margin: 0; color: #493832; font-size: 12px; }
 .inbox-thread h3 small { margin-left: 5px; color: var(--muted); font-weight: 500; }
-.inbox-message-list { min-height: 90px; max-height: none; flex: 1; overflow-y: auto; display: grid; align-content: start; gap: 8px; }
+.inbox-message-list { min-height: 72px; max-height: 210px; flex: 0 1 auto; overflow-y: auto; display: grid; align-content: start; gap: 8px; }
 .inbox-message { width: fit-content; max-width: 86%; padding: 9px 11px; border-radius: 12px 12px 12px 3px; background: #f7efe9; }
 .inbox-message.own { justify-self: end; border-radius: 12px 12px 3px 12px; background: #f9e2df; }
 .inbox-message b, .inbox-message small { color: #927d75; font-size: 9px; }
@@ -1018,6 +1176,16 @@ function formatTime(value: string) {
 .inbox-reply input { min-width: 0; min-height: 38px; flex: 1; padding: 0 11px; border: 1px solid #eadfd9; border-radius: 10px; outline: none; font: 12px var(--font-body); }
 .inbox-reply button { padding: 0 14px; border: 0; border-radius: 10px; background: var(--coral); color: #fff; cursor: pointer; font: 700 11px var(--font-body); }
 .inbox-reply button:disabled { opacity: .5; cursor: not-allowed; }
+.payment-proof-button { padding: 0; border: 0; background: transparent; color: var(--coral-dark); cursor: pointer; font: 600 11px var(--font-body); text-decoration: underline; }
+.seller-payment-proof-viewer { position: relative; box-sizing: border-box; width: min(90vw, 640px); max-height: 90vh; overflow-y: auto; padding: 24px; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(0, 0, 0, .35); }
+.seller-payment-proof-viewer h2 { margin: 0 42px 6px 0; color: #493832; font: 700 20px var(--font-head); }
+.seller-payment-proof-viewer > p { margin: 0 0 12px; color: #927d75; font-size: 12px; }
+.seller-payment-proof-viewer > img { display: block; width: 100%; max-height: 62vh; border: 1px solid #f0e6e0; border-radius: 10px; background: #fbf9f6; object-fit: contain; }
+.seller-payment-proof-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.payment-confirmed-label { color: #28714d; font-size: 12px; font-weight: 700; }
+.seller-page :deep(.payment-proof-button) { min-height: 30px; margin-top: 6px; padding: 5px 12px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #efc3bd; border-radius: 999px; background: linear-gradient(135deg, #fff4f0, #fbe2df); color: #a9464d; box-shadow: 0 3px 8px #c45f5f1c; cursor: pointer; font: 700 10px var(--font-body); text-decoration: none; transition: background .18s, box-shadow .18s, transform .18s; }
+.seller-page :deep(.payment-proof-button:hover) { transform: translateY(-1px); background: #f9d9d5; box-shadow: 0 5px 12px #c45f5f2b; }
+.seller-page :deep(.payment-proof-button:focus-visible) { outline: 2px solid var(--coral-dark); outline-offset: 2px; }
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .metrics article, .payment-stats article { min-width: 0; padding: 17px; display: grid; align-content: center; gap: 6px; border: 1px solid #f0e6e0; border-radius: 18px; background: #fff; }
 .metrics article { min-height: 105px; }
@@ -1051,7 +1219,7 @@ function formatTime(value: string) {
 .review-summary-score { color: #493832; font: 700 23px var(--font-head); }
 .seller-review-stars, .seller-review-rating { color: #e8a34f; letter-spacing: 1px; }
 .seller-review-card { display: flex; gap: 14px; padding: 14px; border: 1px solid #f0e6e0; border-radius: 16px; background: #fff; }
-.seller-review-card > img { width: 68px; height: 68px; flex: 0 0 auto; border-radius: 12px; background: #f7eeea; object-fit: contain; object-position: center; }
+.seller-review-card > img, .seller-review-card > .seller-product-photo-placeholder { width: 68px; height: 68px; flex: 0 0 auto; border-radius: 12px; background: #f7eeea; object-fit: contain; object-position: center; }
 .seller-review-copy { min-width: 0; flex: 1; }
 .seller-review-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .seller-review-top > div { min-width: 0; display: grid; gap: 4px; }
@@ -1079,7 +1247,7 @@ function formatTime(value: string) {
 .dress-sales-group { display: grid; gap: 7px; }
 .dress-sales-row { min-width: 0; display: flex; align-items: center; gap: 9px; padding: 7px 8px; border: 1px solid #e8f0e7; border-radius: 12px; background: #f8fcf8; }
 .dress-sales-row.unsold { border-color: #f1e7df; background: #fffaf7; }
-.dress-sales-row img { width: 38px; height: 42px; flex: 0 0 auto; border-radius: 8px; background: #f8f0ec; object-fit: contain; }
+.dress-sales-row img, .dress-sales-row .seller-product-photo-placeholder { width: 38px; height: 42px; flex: 0 0 auto; border-radius: 8px; background: #f8f0ec; object-fit: contain; }
 .dress-sales-row > span { min-width: 0; flex: 1; display: grid; gap: 3px; }
 .dress-sales-row b { overflow: hidden; color: #57443d; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .dress-sales-row small { color: var(--muted); font-size: 9px; }
@@ -1091,7 +1259,7 @@ function formatTime(value: string) {
 .bar { height: 8px; overflow: hidden; border-radius: 10px; background: #f8e2df; }
 .bar span { height: 100%; display: block; border-radius: inherit; background: var(--coral); }
 .restock-preview { display: flex; align-items: center; gap: 11px; margin: 8px 0; padding: 10px; border: 1px solid #f3d9d5; border-radius: 14px; background: #fff9f8; }
-.restock-preview img { width: 42px; height: 42px; object-fit: contain; border-radius: 11px; background: #f9e5e1; }
+.restock-preview img, .restock-preview .seller-product-photo-placeholder { width: 42px; height: 42px; flex: 0 0 auto; object-fit: contain; border-radius: 11px; background: #f9e5e1; }
 .restock-preview div { min-width: 0; flex: 1; display: grid; gap: 5px; }
 .restock-preview b { overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .restock-preview span { color: var(--muted); font-size: 10px; }
@@ -1105,16 +1273,23 @@ function formatTime(value: string) {
 .form-error { grid-column: 1 / -1; margin: 0; color: #b5473e; font-size: 11px; }
 .submit-button { grid-column: 1 / -1; justify-self: start; }
 .inventory-panel { padding-bottom: 10px; }
+.inventory-panel-paginated { margin-bottom: 96px; }
 .search-field { width: 210px; height: 36px; display: flex; align-items: center; gap: 7px; }
 .search-field ion-icon { color: #99857e; }
 .search-field input { width: 100%; border: 0; outline: 0; font: 500 11px var(--font-body); }
 .table-wrap { width: 100%; overflow-x: auto; }
+.inventory-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 8px 2px; color: #927d75; font-size: 10px; }
+.inventory-pagination > div { display: flex; align-items: center; gap: 10px; }
+.inventory-pagination button { min-height: 32px; padding: 0 10px; border: 1px solid #eadfd9; border-radius: 9px; background: #fff; color: #705f58; cursor: pointer; font: 600 10px var(--font-body); }
+.inventory-pagination button:disabled { opacity: .5; cursor: not-allowed; }
 .inventory-table, .orders-table { width: 100%; border-collapse: collapse; text-align: left; }
 .inventory-table th, .orders-table th { padding: 10px 8px; border-bottom: 1px solid #eee5df; color: #927d75; font-size: 9px; font-weight: 700; white-space: nowrap; }
 .inventory-table td, .orders-table td { padding: 10px 8px; border-bottom: 1px solid #f2ebe6; color: #5a4943; font-size: 10px; }
 .inventory-table tr:last-child td, .orders-table tr:last-child td { border-bottom: 0; }
 .inventory-product { min-width: 170px; display: flex; align-items: center; gap: 9px; }
 .inventory-product img { width: 40px; height: 42px; object-fit: contain; border-radius: 9px; background: #f8f0ec; }
+.inventory-product-photo-placeholder { width: 40px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; background: #f8f0ec; color: #b89a91; }
+.inventory-product-photo-placeholder ion-icon { font-size: 19px; }
 .inventory-product div { display: grid; gap: 4px; }
 .orders-table td:first-child { display: grid; gap: 4px; }
 .inventory-product b, .orders-table td:first-child b { max-width: 175px; overflow: hidden; color: #493832; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -1133,6 +1308,9 @@ function formatTime(value: string) {
 .icon-button.danger { color: #b57970; }
 .icon-button:hover { background: #f9e7e4; }
 .empty-cell { padding: 26px !important; color: var(--muted) !important; text-align: center; }
+.inventory-loading { min-height: 150px; display: flex; align-items: center; justify-content: center; gap: 10px; color: #806d65; font-size: 12px; }
+.inventory-loading span { width: 18px; height: 18px; border: 2px solid #f1d8d3; border-top-color: var(--coral); border-radius: 50%; animation: inventory-spin .8s linear infinite; }
+@keyframes inventory-spin { to { transform: rotate(360deg); } }
 .order-processing-panel { padding: 24px 25px 20px; border-radius: 25px; }
 .order-processing-heading { padding: 16px 20px; border: 1px solid #f0d8d4; border-radius: 18px; background: linear-gradient(120deg, #fff1ed, #f8e3df 58%, #f6e8e2); }
 .order-processing-heading h2 { margin: 0 0 6px; color: #402f2b; font: 700 23px Georgia, serif; }
@@ -1173,7 +1351,7 @@ function formatTime(value: string) {
 .large-empty p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
 .alert-panel { padding: 22px; }
 .alert-row { display: grid; grid-template-columns: 48px minmax(140px, 1fr) auto; align-items: center; gap: 12px; margin: 8px 0; padding: 12px; border: 1px solid #f2d5d1; border-radius: 15px; background: #fff9f8; }
-.alert-row > img { width: 46px; height: 46px; object-fit: contain; border-radius: 11px; background: #f8e3df; }
+.alert-row > img, .alert-row > .seller-product-photo-placeholder { width: 46px; height: 46px; flex: 0 0 auto; object-fit: contain; border-radius: 11px; background: #f8e3df; }
 .alert-copy { min-width: 0; display: grid; gap: 6px; }
 .alert-copy b { overflow: hidden; color: #493832; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .alert-copy span { color: var(--muted); font-size: 10px; }
@@ -1182,7 +1360,7 @@ function formatTime(value: string) {
 .alert-row .primary-button:disabled { cursor: not-allowed; opacity: .58; }
 .reorder-history { display: grid; gap: 10px; }
 .reorder-history-row { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #f0e6e0; border-radius: 13px; background: #fff; }
-.reorder-history-row img { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 9px; background: #f8f0ec; object-fit: contain; }
+.reorder-history-row img, .reorder-history-row .seller-product-photo-placeholder { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 9px; background: #f8f0ec; object-fit: contain; }
 .reorder-history-row > div { min-width: 0; flex: 1; display: grid; gap: 4px; }
 .reorder-history-row b { overflow: hidden; color: #57443d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .reorder-history-row small { color: var(--muted); font-size: 9px; }
@@ -1200,7 +1378,9 @@ function formatTime(value: string) {
 .reorder-popup-intro { margin: 0; color: #85736d; font-size: 12px; line-height: 1.6; }
 .reorder-popup-items { display: grid; gap: 8px; margin: 18px 0; }
 .reorder-popup-item { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #f2e7e1; border-radius: 13px; background: rgba(255,255,255,.9); }
-.reorder-popup-item img { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 10px; background: #f8f0ec; object-fit: contain; }
+.reorder-popup-item img, .reorder-popup-item .seller-product-photo-placeholder { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 10px; background: #f8f0ec; object-fit: contain; }
+.seller-product-photo-placeholder { display: grid; place-items: center; color: #b89a91; }
+.seller-product-photo-placeholder ion-icon { font-size: 19px; }
 .reorder-popup-product { min-width: 0; flex: 1; display: grid; gap: 4px; }
 .reorder-popup-product b { overflow: hidden; color: #57443d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .reorder-popup-product small { color: #99877f; font-size: 9px; }
@@ -1255,12 +1435,33 @@ function formatTime(value: string) {
   .seller-profile-form { grid-template-columns: 1fr; }
   .seller-content { gap: 12px; }
   .seller-review-card { gap: 10px; padding: 10px; }
-  .seller-review-card > img { width: 54px; height: 54px; }
+  .seller-review-card > img, .seller-review-card > .seller-product-photo-placeholder { width: 54px; height: 54px; }
   .seller-review-top { flex-direction: column; gap: 5px; }
   .page-title { min-height: 0; align-items: flex-start; flex-direction: column; padding: 16px; border-radius: 17px; }
   .page-title h1 { font-size: 24px; }
   .page-title p { font-size: 11px; }
   .panel { padding: 15px; border-radius: 17px; }
+  .inventory-table { min-width: 0; display: block; }
+  .inventory-table thead { display: none; }
+  .inventory-table tbody { display: grid; gap: 10px; }
+  .inventory-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; border: 1px solid #f0e6e0; border-radius: 14px; background: #fff; }
+  .inventory-table td { min-width: 0; display: grid; align-content: start; gap: 5px; padding: 0; border: 0; }
+  .inventory-table td::before { color: #927d75; font-size: 9px; font-weight: 700; }
+  .inventory-table td:first-child { grid-column: 1 / -1; }
+  .inventory-table td:first-child::before { content: none; }
+  .inventory-table td:nth-child(2)::before { content: 'Type'; }
+  .inventory-table td:nth-child(3)::before { content: 'Price'; }
+  .inventory-table td:nth-child(4)::before { content: 'Stock'; }
+  .inventory-table td:nth-child(5)::before { content: 'Reorder at'; }
+  .inventory-table td:nth-child(6)::before { content: 'Auto-reorder'; }
+  .inventory-table td:nth-child(7) { grid-column: 2; justify-items: end; }
+  .inventory-table td:nth-child(7)::before { content: 'Remove'; }
+  .inventory-product { min-width: 0; }
+  .inventory-product img, .inventory-product-photo-placeholder { width: 54px; height: 58px; flex: 0 0 auto; }
+  .inventory-product b { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+  .inventory-table td[colspan="7"] { grid-column: 1 / -1; justify-items: center; }
+  .inventory-pagination { align-items: flex-start; flex-direction: column; }
+  .inventory-pagination > div { width: 100%; justify-content: space-between; }
   .order-processing-heading { padding: 16px; border-radius: 17px; }
   .order-processing-panel { padding: 16px 14px; }
   .order-processing-heading h2 { font-size: 23px; }

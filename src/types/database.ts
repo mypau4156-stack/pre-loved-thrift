@@ -128,6 +128,7 @@ export interface DbOrder {
   customer_address: string
   payment: string
   payment_proof: string | null
+  payment_verified_at: string | null
   status: OrderStatus
   subtotal: number
   shipping: number

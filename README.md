@@ -37,7 +37,7 @@ Roles are stored in `profiles.role`. Row-level security enforces the same rules 
 
 - `profiles` — auth-linked names, role, phone, address, avatar
 - `house_products` — the six curated storefront products seeded by the migration
-- `products` — seller inventory
+- `products` — seller inventory; anonymous storefront reads are limited to active, in-stock items and the columns needed to display them
 - `cart_items` / `wishlist_items` — per-user shopping data
 - `orders` / `order_items` / `order_messages` — order records, validated line items, and chat
 - `product_reviews` — customer reviews using the existing `id`, `product_id`, `user_id`, `rating`, `review_text`, `seller_service_rating`, `delivery_service_rating`, `show_username`, `photo_urls`, `video_urls`, and `created_at` columns

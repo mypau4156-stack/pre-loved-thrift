@@ -6,10 +6,10 @@
           <h2>New Arrivals</h2>
           <p>Explore our latest trendy pieces</p>
         </div>
-        <a class="link" href="#shop" @click.prevent="emit('navigate', 'shop')">View All Products →</a>
+        <a class="link" href="#shop" @click.prevent="emit('navigate', '')">View All Products →</a>
       </div>
       <div class="row">
-        <article v-for="p in products" :key="p.id" :class="{ hot: p.hot }">
+        <article v-for="p in props.products" :key="p.id" :class="{ hot: p.hot }">
           <div class="img">
             <img :src="p.img" :alt="p.name" />
             <span v-if="p.hot" class="hot-b">HOT</span>
@@ -33,18 +33,21 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { heart, heartOutline, bagHandle } from 'ionicons/icons'
-import { products, type Product } from '../data/mockData'
+import type { Product } from '../data/mockData'
 import { formatPeso } from '../utils/currency'
 
+const props = withDefaults(defineProps<{ products: Product[]; wished?: (string | number)[] }>(), {
+  wished: () => []
+})
+const wished = computed(() => props.wished)
 const emit = defineEmits<{
   (event: 'navigate', id: string): void
   (event: 'toggle-wish', product: Product): void
   (event: 'add-cart', product: Product): void
 }>()
-
-withDefaults(defineProps<{ wished?: (string | number)[] }>(), { wished: () => [] })
 </script>
 
 <style scoped>

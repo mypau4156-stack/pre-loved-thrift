@@ -46,6 +46,24 @@ interface DbReorderRequest {
 }
 
 const reorderRequestColumns = 'id,product_id,current_stock,reorder_point,status,created_at'
+const inventoryColumns = 'id,seller_id,name,category,type,price,stock,reorder_point,auto_reorder,color,slot,fit,sold'
+
+interface DbInventoryRow {
+  id: string
+  seller_id: string
+  name: string
+  category: string
+  type: string | null
+  price: number
+  stock: number
+  reorder_point: number
+  auto_reorder: boolean
+  color: string | null
+  slot: string | null
+  fit: unknown
+  sold: number
+  image?: string | null
+}
 
 function formatSupabaseError(error: { message: string; details?: string | null; hint?: string | null; code?: string }): Error {
   const reason = [error.message, error.details, error.hint].filter(Boolean).join(' ')
@@ -63,7 +81,7 @@ function mapReorderRequest(row: DbReorderRequest): ReorderRequest {
   }
 }
 
-function mapProduct(row: DbProduct): InventoryProduct {
+function mapProduct(row: DbInventoryRow): InventoryProduct {
   const fit = isGarmentImageFit(row.fit) ? row.fit : undefined
   return {
     id: row.id,
@@ -102,7 +120,7 @@ function mapActivity(row: SellerActivityRow): ActivityEntry {
 export async function listStorefrontProducts(): Promise<Product[]> {
   const { data, error } = await requireSupabase()
     .from('products')
-    .select('*')
+    .select('seller_id, id, name, price, image, category, type, slot, fit')
     .eq('active', true)
     .gt('stock', 0)
     .order('created_at', { ascending: false })
@@ -128,17 +146,33 @@ export async function listStorefrontProducts(): Promise<Product[]> {
 export async function listMyProducts(sellerId: string): Promise<InventoryProduct[]> {
   const { data, error } = await requireSupabase()
     .from('products')
-    .select('*')
+    .select(inventoryColumns)
     .eq('seller_id', sellerId)
     .order('created_at', { ascending: false })
 
-  if (error) throw error
-  return ((data ?? []) as DbProduct[]).map(mapProduct)
+  if (error) throw formatSupabaseError(error)
+  return ((data ?? []) as DbInventoryRow[]).map(mapProduct)
+}
+
+export async function listSellerProductImages(sellerId: string, productIds: string[]): Promise<Record<string, string>> {
+  if (!productIds.length) return {}
+
+  const { data, error } = await requireSupabase()
+    .from('products')
+    .select('id,image')
+    .eq('seller_id', sellerId)
+    .in('id', productIds)
+
+  if (error) throw formatSupabaseError(error)
+  return ((data ?? []) as Array<{ id: string; image: string | null }>).reduce<Record<string, string>>((images, row) => {
+    if (row.image) images[row.id] = row.image
+    return images
+  }, {})
 }
 
 export async function seedMyInventory(): Promise<void> {
   const { error } = await requireSupabase().rpc('seed_my_seller_inventory')
-  if (error) throw error
+  if (error) throw formatSupabaseError(error)
 }
 
 export interface NewProductInput {

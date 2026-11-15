@@ -16,8 +16,8 @@
         @navigate="handleHeaderNavigation" />
       <div v-if="!dashboardOpen && !sellerOpen && !riderOpen" class="storefront">
         <HeroSection />
-        <CategoriesSection @navigate="handleCategoryNavigation" />
-        <ProductsSection :wished="wishedIds" @toggle-wish="toggleWish" @add-cart="addToCart" @navigate="handleCategoryNavigation" />
+        <CategoriesSection :products="dashboardProducts" @navigate="handleCategoryNavigation" />
+        <ProductsSection :products="dashboardProducts" :wished="wishedIds" @toggle-wish="toggleWish" @add-cart="addToCart" @navigate="handleCategoryNavigation" />
         <OutfitBuilder :cart="cart" :products="dashboardProducts" @need-login="needLogin" @outfit-checkout="onOutfitCheckout" />
         <DealsSection @navigate="handleHeaderNavigation" />
         <section id="spin-wheel" class="section">
@@ -28,13 +28,14 @@
         <AppFooter />
       </div>
       <UserDashboard ref="userDashboardRef" v-if="user" :key="dashboardView" v-show="dashboardOpen" :user="user" :wishlist="wished" :cart-count="cartItemCount"
-        :orders="orders" :products="dashboardProducts" :categories="categories" :initial-view="dashboardView"
+        :orders="orders" :products="dashboardProducts" :categories="categories" :initial-view="dashboardView" :initial-category="dashboardCategory"
         @storefront="dashboardOpen = false"
         @add-cart="dashboardAddToCart" @buy-again="buyAgain" @toggle-wish="dashboardToggleWish"
         @update-user="onProfileUpdate" @message="addOrderMessage" @message-seller="sellerChatOpen = true" />
       <SellerDashboard v-if="sellerUser && sellerOpen" :user="sellerUser" :orders="sellerOrders" :riders="registeredRiders"
         @logout="logout" @profile-update="onSellerProfileUpdate"
-        @status-change="updateSellerOrderStatus" @rider-change="updateSellerOrderRider" @message="addOrderMessage" />
+        @status-change="updateSellerOrderStatus" @rider-change="updateSellerOrderRider" @message="addOrderMessage"
+        @payment-confirmed="updateSellerOrderPayment" />
       <RiderDashboard v-if="riderUser && riderOpen" :rider="riderUser" :orders="sellerOrders"
         @storefront="returnToStorefront" @logout="confirmRiderLogout"
         @profile-update="updateRiderProfile"
@@ -160,6 +161,7 @@ function openBuyerMessenger() {
 const sellerChatOpen = ref(false)
 const cartOpen = ref(false), wishOpen = ref(false), checkoutLoading = ref(false)
 const dashboardView = ref<'overview' | 'orders' | 'wishlist' | 'profile' | 'categories'>('overview')
+const dashboardCategory = ref('')
 const cartToast = ref(false)
 const orderConfirmationOpen = ref(false)
 const returningToAuthSelection = ref(false)
@@ -181,6 +183,7 @@ let cartToastTimer: number | undefined
 let unsubscribeSupabaseAuth: (() => void) | undefined
 let unsubscribeOrderMessages: (() => void) | undefined
 let sessionToken = 0
+let dashboardProductsLoad: Promise<void> | null = null
 const cartMutationQueue = new Map<string, Promise<void>>()
 
 function showCartToast() {
@@ -237,7 +240,7 @@ async function loadBuyerData(buyerId: string) {
     listBuyerOrders(buyerId)
   ])
   cart.value = await Promise.all(cartItems.map(async item => {
-    if (!item.productId || item.fit?.version === 7 || !item.img.startsWith('data:image/')) return item
+    if (!item.productId || !item.slot || item.fit?.version === 7 || !item.img) return item
     try {
       const prepared = await prepareProductImageFromDataUrl(item.img)
       const updatedItem = { ...item, img: prepared.dataUrl, fit: prepared.fit }
@@ -306,7 +309,7 @@ async function syncSession(openDashboard: boolean) {
       dashboardOpen.value = openDashboard
       sellerOpen.value = false
       riderOpen.value = false
-      await Promise.all([loadBuyerData(profile.id), loadDashboardProducts()])
+      await loadBuyerData(profile.id)
     } else if (profile.role === 'seller') {
       resetBuyerState()
       sellerUser.value = account
@@ -363,7 +366,6 @@ onMounted(async () => {
       await showError('Social sign-in failed', new Error(oauthError), 'Please try again.')
     }
 
-    await syncSession(false)
   }
 
   if (!document.querySelector('script[data-elfsight-platform], script[src^="https://elfsightcdn.com/platform.js"]')) {
@@ -485,7 +487,7 @@ async function addCartItem(product: Product | CartItem, afterAdded?: () => void)
   if (getProductSizes(product).length && !size) return
 
   let cartProduct = product
-  if ('productId' in product && product.productId && product.img.startsWith('data:image/')) {
+  if ('productId' in product && product.productId && product.slot && !product.fit && product.img) {
     const preparedImage = await prepareProductImageFromDataUrl(product.img)
     cartProduct = { ...product, img: preparedImage.dataUrl, fit: preparedImage.fit }
   }
@@ -677,12 +679,21 @@ const onOutfitCheckout = (items: CartItem[]) => {
 }
 
 async function loadDashboardProducts() {
+  if (dashboardProductsLoad) return dashboardProductsLoad
+
+  const request = (async () => {
+    try {
+      const sellerProducts = await listStorefrontProducts()
+      dashboardProducts.value = [...sellerProducts, ...products.map(product => ({ ...product, newArrival: true }))]
+    } catch (error) {
+      console.error('Unable to load seller products.', error)
+    }
+  })()
+  dashboardProductsLoad = request
   try {
-    const sellerProducts = await listStorefrontProducts()
-    dashboardProducts.value = [...sellerProducts, ...products.map(product => ({ ...product, newArrival: true }))]
-  } catch (error) {
-    console.error('Unable to load seller products.', error)
-    dashboardProducts.value = products.map(product => ({ ...product, newArrival: true }))
+    await request
+  } finally {
+    if (dashboardProductsLoad === request) dashboardProductsLoad = null
   }
 }
 watch(dashboardOpen, isOpen => {
@@ -692,15 +703,21 @@ watch(dashboardOpen, isOpen => {
 const openCustomerDashboard = (tab: 'overview' | 'orders' | 'wishlist' | 'profile' | 'categories' = 'overview') => {
   dashboardOpen.value = true
   dashboardView.value = tab
+  dashboardCategory.value = ''
   sellerOpen.value = false
   authOpen.value = false
 }
 
-const handleCategoryNavigation = () => {
-  if (user.value) {
+const handleCategoryNavigation = (category = '') => {
+  const openCategory = () => {
     openCustomerDashboard('categories')
+    dashboardCategory.value = category.trim()
+  }
+  if (user.value) {
+    openCategory()
     return
   }
+  pending = openCategory
   authOpen.value = true
 }
 
@@ -874,6 +891,10 @@ const updateSellerOrderRider = (id: string, rider: RiderAccount) => {
   })().catch(error => showError('Unable to assign rider', error))
 }
 
+const updateSellerOrderPayment = (id: string, verifiedAt: string) => {
+  updateOrderData(id, { paymentVerifiedAt: verifiedAt })
+}
+
 const updateDeliveryOrder = (id: string, patch: Partial<OrderRecord>) => {
   void (async () => {
     const order = sellerOrders.value.find(item => item.id === id) ?? orders.value.find(item => item.id === id)
@@ -910,8 +931,8 @@ const dashboardToggleWish = (product: Product) => toggleWish(product)
 
 function handleHeaderNavigation(id: string) {
   if (dashboardOpen.value && id === 'shop') {
-    void loadDashboardProducts()
     dashboardView.value = 'categories'
+    dashboardCategory.value = ''
     return
   }
   void navigateStorefront(id)

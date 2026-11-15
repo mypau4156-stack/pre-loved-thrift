@@ -50,8 +50,11 @@
           <section class="panel picked">
             <div class="panel-heading"><div><span class="eyebrow">A FEW GOOD FINDS</span><h2>Picked for you</h2></div>
               <button class="text-button" @click="openShop">Shop all <ion-icon :icon="arrowForwardOutline" /></button></div>
-            <ProductGrid :products="products" :wishlist="wishlist" @add-cart="(product) => $emit('add-cart', product)"
-              @toggle-wish="(product) => $emit('toggle-wish', product)" />
+            <section v-for="group in productGroups" :key="group.key" class="category-products">
+              <h3 class="category-group-heading">{{ group.category }}</h3>
+              <ProductGrid :products="group.products" :wishlist="wishlist" @add-cart="(product) => $emit('add-cart', product)"
+                @toggle-wish="(product) => $emit('toggle-wish', product)" />
+            </section>
           </section>
         </template>
 
@@ -63,16 +66,24 @@
               <button v-for="category in availableCategories" :key="category" type="button"
                 :class="{ active: selectedCategory === category }" @click="selectCategory(category)">{{ category }}</button>
             </div>
-            <div v-if="categoryProducts.length" class="category-products">
-              <ProductGrid :products="categoryProducts" :wishlist="wishlist"
-                @add-cart="(product) => $emit('add-cart', product)" @toggle-wish="(product) => $emit('toggle-wish', product)" />
+            <div v-if="visibleCategoryGroups.length" class="category-group-list">
+              <section v-for="group in visibleCategoryGroups" :key="group.key" class="category-products">
+                <h3 class="category-group-heading">{{ group.category }}</h3>
+                <ProductGrid :products="group.products" :wishlist="wishlist"
+                  @add-cart="(product) => $emit('add-cart', product)" @toggle-wish="(product) => $emit('toggle-wish', product)" />
+              </section>
             </div>
             <div v-else class="empty-state"><div><b>No items in this category yet</b><p>Try another category or check back later.</p></div></div>
           </section>
           <section class="panel shop-collection">
             <div class="panel-heading"><div><span class="eyebrow">JUST LISTED</span><h2>New arrivals</h2></div></div>
-            <ProductGrid v-if="newArrivals.length" :products="newArrivals" :wishlist="wishlist"
-              @add-cart="(product) => $emit('add-cart', product)" @toggle-wish="(product) => $emit('toggle-wish', product)" />
+            <div v-if="newArrivalGroups.length" class="category-group-list">
+              <section v-for="group in newArrivalGroups" :key="group.key" class="category-products">
+                <h3 class="category-group-heading">{{ group.category }}</h3>
+                <ProductGrid :products="group.products" :wishlist="wishlist"
+                  @add-cart="(product) => $emit('add-cart', product)" @toggle-wish="(product) => $emit('toggle-wish', product)" />
+              </section>
+            </div>
             <div v-else class="empty-state"><div><b>No new arrivals yet</b><p>Newly listed items will appear here.</p></div></div>
           </section>
         </template>
@@ -404,7 +415,7 @@ import {
   arrowForwardOutline, bagHandleOutline, cartOutline, chatbubbleEllipsesOutline, heart, heartOutline,
   storefrontOutline, personOutline, gridOutline, receiptOutline, createOutline, closeOutline, starOutline
 } from 'ionicons/icons'
-import type { CartItem, Category, OrderMessage, OrderRecord, Product } from '../data/mockData'
+import { getStorefrontCategory, type CartItem, type Category, type OrderMessage, type OrderRecord, type Product } from '../data/mockData'
 import { formatPeso } from '../utils/currency'
 import { createProductReview, listBuyerProductReviews, type ProductReview } from '../services/reviews'
 
@@ -416,6 +427,7 @@ const props = defineProps<{
   products: Product[]
   categories: Category[]
   initialView?: 'overview' | 'orders' | 'wishlist' | 'profile' | 'categories'
+  initialCategory?: string
 }>()
 const emit = defineEmits<{
   (event: 'storefront'): void
@@ -428,7 +440,7 @@ const emit = defineEmits<{
 }>()
 
 const view = ref<'overview' | 'orders' | 'wishlist' | 'profile' | 'categories' | 'reviews'>(props.initialView || 'overview')
-const selectedCategory = ref('')
+const selectedCategory = ref(props.initialCategory?.trim() ?? '')
 const messageDrafts = reactive<Record<string, string>>({})
 const sellerMessageDrafts = reactive<Record<string, string>>({})
 const buyerMessengerOpen = ref(false)
@@ -437,6 +449,9 @@ const selectedRiderOrderId = ref('')
 watch(() => props.initialView, (next) => {
   if (next) view.value = next
 }, { immediate: true })
+watch(() => props.initialCategory, next => {
+  selectedCategory.value = next?.trim() ?? ''
+})
 const profileEditOpen = ref(false)
 const profileDraft = ref({ name: '', phone: '', address: '', avatar: '' })
 const photoInput = ref<HTMLInputElement | null>(null)
@@ -449,11 +464,23 @@ const recentOrders = computed(() => props.orders.slice(0, 3))
 const wishlistProducts = computed(() => props.wishlist.map((item) => ({
   id: item.id, name: item.name, price: item.price, img: item.img, cat: item.cat || '', type: item.type, slot: item.slot, fit: item.fit
 })))
-const newArrivals = computed(() => props.products.filter(product => product.newArrival))
-const availableCategories = computed(() => [...new Set(props.products.map(product => product.cat).filter(Boolean))].sort((a, b) => a.localeCompare(b)))
-const categoryProducts = computed(() => selectedCategory.value
-  ? props.products.filter(product => product.cat === selectedCategory.value)
-  : props.products)
+function groupProductsByCategory(items: Product[]) {
+  const groups = new Map<string, { key: string; category: string; products: Product[] }>()
+  for (const product of items) {
+    const category = getStorefrontCategory(product.cat)
+    const key = category.toLowerCase()
+    const group = groups.get(key)
+    if (group) group.products.push(product)
+    else groups.set(key, { key, category, products: [product] })
+  }
+  return [...groups.values()].sort((a, b) => a.category.localeCompare(b.category))
+}
+const productGroups = computed(() => groupProductsByCategory(props.products))
+const newArrivalGroups = computed(() => groupProductsByCategory(props.products.filter(product => product.newArrival)))
+const availableCategories = computed(() => productGroups.value.map(group => group.category))
+const visibleCategoryGroups = computed(() => selectedCategory.value
+  ? productGroups.value.filter(group => group.key === getStorefrontCategory(selectedCategory.value).toLowerCase())
+  : productGroups.value)
 const navItems: Array<{ id: 'overview' | 'orders' | 'wishlist' | 'profile' | 'categories' | 'reviews'; label: string; icon: typeof gridOutline }> = [
   { id: 'overview', label: 'Dashboard', icon: gridOutline },
   { id: 'categories', label: 'Shop', icon: storefrontOutline },
@@ -684,7 +711,7 @@ const ProductGrid = defineComponent({
       const saved = gridProps.wishlist.some((item) => String(item.id) === String(product.id))
       return h('article', { class: 'product-card', key: product.id }, [
         h('div', { class: 'product-image' }, [
-          h('img', { src: product.img, alt: product.name }),
+          h('img', { src: product.img, alt: product.name, loading: 'lazy', decoding: 'async' }),
           product.newArrival
             ? h('span', { class: 'hot-label' }, 'NEW ARRIVAL')
             : product.hot ? h('span', { class: 'hot-label' }, 'POPULAR') : null,
@@ -695,7 +722,7 @@ const ProductGrid = defineComponent({
           }, [h(IonIcon, { icon: saved ? heart : heartOutline })])
         ]),
         h('div', { class: 'product-copy' }, [
-          h('span', { class: 'product-category' }, product.cat),
+          h('span', { class: 'product-category' }, getStorefrontCategory(product.cat)),
           h('h3', product.name),
           h('div', { class: 'price' }, [
             h('b', formatPeso(product.price)),
@@ -904,7 +931,9 @@ defineExpose({ openBuyerMessenger })
 .category-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .category-filters button { padding: 9px 13px; border: 1px solid #efdfda; border-radius: 999px; background: #fff; color: #705f58; cursor: pointer; font: 600 11px var(--font-body); }
 .category-filters button.active, .category-filters button:hover { border-color: var(--coral); background: #f9e2df; color: var(--coral-dark); }
+.category-group-list { display: grid; gap: 20px; }
 .category-products { margin-top: 2px; }
+.category-group-heading { margin: 0 0 10px; color: var(--ink); font: 700 15px var(--font-body); }
 :deep(.product-grid) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 :deep(.product-card) { min-width: 0; overflow: hidden; border: 1px solid #f0e6e0; border-radius: 17px; background: #fff; transition: transform .2s, box-shadow .2s; }
 :deep(.product-card:hover) { transform: translateY(-3px); box-shadow: 0 10px 24px #5a31301a; }

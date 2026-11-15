@@ -35,9 +35,9 @@ type?: string
 }
 function slotFromDetails(details: string): Slot | undefined {
   if (/\b(shoes?|footwear|sneakers?|boots?|sandals?|slippers?|loafers?|heels?|flats?|clogs?|mules?|espadrilles?|wedges?|flip[\s-]?flops?)\b/.test(details)) return 'shoes'
-  if (/\b(dresses?|gowns?)\b/.test(details)) return 'dress'
-  if (/\b(tops?|t-?shirts?|tees?|shirts?|blouses?|sweaters?|polos?|jackets?|coats?|hoodies?|cardigans?)\b/.test(details)) return 'top'
   if (/\b(bottoms?|jeans|denim|pants|trousers|shorts?|skorts?|skirts?|leggings)\b/.test(details)) return 'bottom'
+  if (/\b(dress(?:es)?|gowns?)\b/.test(details)) return 'dress'
+  if (/\b(tops?|t-?shirts?|tees?|shirts?|blouses?|sweaters?|polos?|jackets?|coats?|hoodies?|cardigans?)\b/.test(details)) return 'top'
   return undefined
 }
 export function getProductSlot(product: { name: string; slot?: Slot; cat?: string; type?: string }): Slot | undefined {
@@ -52,20 +52,41 @@ export function getProductSlot(product: { name: string; slot?: Slot; cat?: strin
   if ([typeDetails, nameDetails, categoryDetails].some(details =>
     /\b(shoes?|footwear|sneakers?|boots?|sandals?|slippers?|loafers?|heels?|flats?|clogs?|mules?|espadrilles?|wedges?|flip[\s-]?flops?)\b/.test(details)
   )) return 'shoes'
+  if ([typeDetails, nameDetails, categoryDetails].some(details =>
+    /\b(bottoms?|jeans|denim|pants|trousers|shorts?|skorts?|skirts?|leggings)\b/.test(details)
+  )) return 'bottom'
+
+  if (product.slot) return product.slot
 
   const typeSlot = slotFromDetails(typeDetails)
   if (typeSlot) return typeSlot
   const namedSlot = slotFromDetails(nameDetails)
   if (namedSlot) return namedSlot
-  if (product.slot) return product.slot
   const categorySlot = slotFromDetails(categoryDetails)
   if (categorySlot) return categorySlot
   return undefined
 }
-export function isShortBottom(product: { name: string; cat?: string; type?: string }): boolean {
-  const details = `${product.name} ${product.cat ?? ''} ${product.type ?? ''}`.toLowerCase()
-  if (/\b(maxi|long)\s+skirts?\b/.test(details)) return false
-  return /\bshorts?\b(?![- ]sleeve)\b|\bskorts?\b|\b(mini\s+)?skirts?\b/.test(details)
+export function isShortBottom(product: { name: string; slot?: Slot; cat?: string; type?: string; fit?: GarmentImageFit }): boolean {
+  const details = `${product.name} ${product.cat ?? ''} ${product.type ?? ''}`
+    .toLowerCase()
+    .replace(/\b(?:long|short)[- ]sleeves?\b/g, '')
+  if (/\b(?:maxi|long|midi)[- ]+skirts?\b|\bjeans?\b|\b(pants|trousers|leggings)\b/.test(details)) return false
+  if (/\bshorts?\b|\bskorts?\b/.test(details)) return true
+  if (/\bmini[- ]skirts?\b/.test(details)) return true
+  return /\bskirts?\b/.test(details)
+}
+export function isShortDress(product: { name: string; cat?: string; type?: string }): boolean {
+  const details = `${product.name} ${product.cat ?? ''} ${product.type ?? ''}`
+    .toLowerCase()
+    .replace(/\b(?:long|short)[- ]sleeves?\b/g, '')
+  if (/\b(?:maxi|long|midi)\b.*\b(dress(?:es)?|gowns?)\b|\bgowns?\b/.test(details)) return false
+  return /\b(?:mini|short)[- ]+dress(?:es)?\b|\bdress(?:es)?\b.*\b(?:mini|short)\b/.test(details)
+}
+export function isLongDress(product: { name: string; cat?: string; type?: string }): boolean {
+  const details = `${product.name} ${product.cat ?? ''} ${product.type ?? ''}`
+    .toLowerCase()
+    .replace(/\blong[- ]sleeves?\b/g, '')
+  return /\b(maxi|long)\b.*\b(dress(?:es)?|gowns?)\b|\bgowns?\b/.test(details)
 }
 export function getProductSizes(product: { name: string; slot?: Slot; cat?: string; type?: string }): string[] {
   const details = `${product.slot ?? ''} ${product.cat ?? ''} ${product.type ?? ''} ${product.name}`.toLowerCase()
@@ -88,6 +109,7 @@ shipping?: number
 total: number
 payment?: string
 paymentProof?: string
+paymentVerifiedAt?: string
 status?: string
 rider?: string
 riderEmail?: string
@@ -119,6 +141,23 @@ export const categories: Category[] = [
 { name: 'Shoes & Footwear', count: ' ', img: '/product%20category/French%20High-Heeled%20Women%27s%20Shoes%202025%20New%20Summer%20Fairy%20Style%20Temperament%20Black%20Fine%20Roman%20-%20Upgraded%20(White)%20_%2040.png', bg: '#f8e5cb' },
 { name: 'Bags & Accessories', count: ' ', img: '/product%20category/Elegant%20Women%27s%20Handbag%20with%20Gold%20Buckle.png', bg: '#f7dfe4' }
 ]
+const storefrontCategoryAliases: Record<string, string> = {
+  accessories: 'Bags & Accessories',
+  'bags & accessories': 'Bags & Accessories',
+  denim: 'Denim Wear',
+  'denim wear': 'Denim Wear',
+  men: 'Tops & T-shirts',
+  'tops & t-shirts': 'Tops & T-shirts',
+  women: 'Women Dresses',
+  'women dresses': 'Women Dresses',
+  shoes: 'Shoes & Footwear',
+  'shoes & footwear': 'Shoes & Footwear'
+}
+export function getStorefrontCategory(value?: string | null): string {
+  const category = value?.trim() ?? ''
+  if (!category) return 'Other'
+  return storefrontCategoryAliases[category.toLowerCase()] ?? category
+}
 export const garments: Garment[] = [
  { id: 'g1', name: 'Rose Dress', src: '/assets/garments/rose-dress.jpg', slot: 'dress' },
  { id: 'g2', name: 'Mauve Dress', src: '/assets/garments/mauve-dress.jpg', slot: 'dress' },
