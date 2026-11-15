@@ -21,6 +21,11 @@
         <ProductsSection :wished="wishedIds" @toggle-wish="toggleWish" @add-cart="addToCart" @navigate="handleCategoryNavigation" />
         <OutfitBuilder :cart="cart" :products="dashboardProducts" @need-login="needLogin" @outfit-checkout="onOutfitCheckout" />
         <DealsSection @navigate="handleHeaderNavigation" />
+        <section id="spin-wheel" class="section">
+          <div class="wrap">
+            <div class="elfsight-app-0564ad1b-442e-457b-8ecb-2d3a12f9b703" data-elfsight-app-lazy></div>
+          </div>
+        </section>
         <AppFooter />
       </div>
       <UserDashboard v-if="user" :key="dashboardView" v-show="dashboardOpen" :user="user" :wishlist="wished" :cart-count="cart.length"
