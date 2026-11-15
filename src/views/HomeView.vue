@@ -7,7 +7,7 @@
         <div v-if="!dashboardOpen && !sellerOpen && !riderOpen && !cartOpen" class="store-announcements">
           <div class="elfsight-app-dd1fc735-75ea-4ab8-b6f1-67d55ec594d5" data-elfsight-app-lazy></div>
         </div>
-        <AppHeader v-if="!sellerOpen && !riderOpen" :user="user" :wish-count="wished.length" :cart-count="cart.length"
+        <AppHeader v-if="!sellerOpen && !riderOpen" :user="user" :wish-count="wished.length" :cart-count="cartItemCount"
           :search-open="searchOpen" :profile-open="dashboardOpen || authOpen" :dashboard-mode="dashboardOpen"
         @open-auth="authOpen = true" @open-user="openCustomerDashboard('overview')"
         @open-seller-center="openSellerAuth" @logout="confirmBuyerLogout"
@@ -27,7 +27,7 @@
         </section>
         <AppFooter />
       </div>
-      <UserDashboard v-if="user" :key="dashboardView" v-show="dashboardOpen" :user="user" :wishlist="wished" :cart-count="cart.length"
+      <UserDashboard v-if="user" :key="dashboardView" v-show="dashboardOpen" :user="user" :wishlist="wished" :cart-count="cartItemCount"
         :orders="orders" :products="dashboardProducts" :categories="categories" :initial-view="dashboardView"
         @storefront="dashboardOpen = false"
         @add-cart="dashboardAddToCart" @buy-again="buyAgain" @toggle-wish="dashboardToggleWish"
@@ -50,7 +50,7 @@
     <CartModal :open="cartOpen" :items="cart" :user="user" :checkout-loading="checkoutLoading" @close="cartOpen = false"
       @open-dashboard="dashboardOpen = true; cartOpen = false"
       @remove="confirmRemoveCart" @checkout="checkoutCart" @edit="editCart"
-      @toggle="toggleCartSelect" @toggle-all="toggleCartAll" />
+      @toggle="toggleCartSelect" @toggle-all="toggleCartAll" @quantity="changeCartQuantity" />
     <WishlistModal :open="wishOpen" :items="wished" @close="wishOpen = false"
       @remove="confirmRemoveWish" @add-cart="moveToCart" />
     <LogoutConfirmation :open="logoutRole !== null" :account-type="logoutRole || 'buyer'"
@@ -167,6 +167,7 @@ const riderUser = ref<User | null>(null)
 const registeredRiders = ref<RiderAccount[]>([])
 const wished = ref<CartItem[]>([])
 const cart = ref<CartItem[]>([])
+const cartItemCount = computed(() => cart.value.reduce((sum, item) => sum + (item.quantity ?? 1), 0))
 const orders = ref<OrderRecord[]>([])
 const sellerOrders = ref<SellerOrderRecord[]>([])
 const dashboardProducts = ref<Product[]>(products.map(product => ({ ...product, newArrival: true })))
@@ -176,6 +177,7 @@ let cartToastTimer: number | undefined
 let unsubscribeSupabaseAuth: (() => void) | undefined
 let unsubscribeOrderMessages: (() => void) | undefined
 let sessionToken = 0
+const cartMutationQueue = new Map<string, Promise<void>>()
 
 function showCartToast() {
   cartToast.value = true
@@ -385,6 +387,7 @@ const toItem = (p: Product | CartItem, size?: string): CartItem => ({
   name: p.name,
   price: p.price,
   img: p.img,
+  quantity: 'quantity' in p ? p.quantity ?? 1 : 1,
   slot: p.slot,
   fit: p.fit,
   selected: true,
@@ -430,6 +433,45 @@ async function promptForProductSize(product: Product | CartItem) {
   return result.role === 'confirm' ? selectedSize : undefined
 }
 
+async function withCartItemLock(item: CartItem, action: () => Promise<void>) {
+  const key = `${String(item.id)}\u0000${item.size ?? ''}`
+  const previous = cartMutationQueue.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const current = new Promise<void>(resolve => { release = resolve })
+  cartMutationQueue.set(key, current)
+
+  await previous
+  try {
+    await action()
+  } finally {
+    release()
+    if (cartMutationQueue.get(key) === current) cartMutationQueue.delete(key)
+  }
+}
+
+async function addOrIncrementCartItem(item: CartItem) {
+  const userId = user.value?.id
+  if (!userId) return
+
+  await withCartItemLock(item, async () => {
+    const index = cart.value.findIndex(existing =>
+      String(existing.id) === String(item.id) && existing.size === item.size)
+    if (index >= 0) {
+      const existing = cart.value[index]
+      const quantity = (existing.quantity ?? 1) + (item.quantity ?? 1)
+      cart.value[index] = existing.rowId
+        ? await updateCartItemRecord(existing.rowId, { quantity })
+        : await addCartItemRecord(userId, { ...existing, quantity })
+      return
+    }
+
+    cart.value.push(await addCartItemRecord(userId, {
+      ...item,
+      quantity: item.quantity ?? 1
+    }))
+  })
+}
+
 async function addCartItem(product: Product | CartItem, afterAdded?: () => void) {
   const size = await promptForProductSize(product)
   if (getProductSizes(product).length && !size) return
@@ -441,11 +483,7 @@ async function addCartItem(product: Product | CartItem, afterAdded?: () => void)
   }
 
   const item = toItem(cartProduct, size)
-  const alreadyInCart = cart.value.some(existing => String(existing.id) === String(item.id) && existing.size === item.size)
-  if (!alreadyInCart) {
-    if (!user.value) return
-    cart.value.push(await addCartItemRecord(user.value.id, item))
-  }
+  await addOrIncrementCartItem(item)
   afterAdded?.()
   showCartToast()
 }
@@ -459,24 +497,37 @@ async function buyAgain(items: CartItem[]) {
   if (!user.value || !items.length) return
 
   try {
-    let addedItems = 0
     for (const item of items) {
-      const alreadyInCart = cart.value.some(existing =>
-        String(existing.id) === String(item.id) && existing.size === item.size)
-      if (alreadyInCart) continue
-
-      cart.value.push(await addCartItemRecord(user.value.id, {
+      await addOrIncrementCartItem({
         ...item,
         rowId: undefined,
-        selected: true
-      }))
-      addedItems += 1
+        selected: true,
+        quantity: item.quantity ?? 1
+      })
     }
 
-    if (addedItems > 0) showCartToast()
+    showCartToast()
   } catch (error) {
     await showError('Unable to buy this order again', error)
   }
+}
+
+function changeCartQuantity(id: CartItem['id'], delta: number) {
+  void (async () => {
+    const item = cart.value.find(cartItem => String(cartItem.id) === String(id))
+    if (!item) return
+
+    await withCartItemLock(item, async () => {
+      const index = cart.value.findIndex(cartItem => String(cartItem.id) === String(id))
+      if (index < 0) return
+      const current = cart.value[index]
+      const quantity = (current.quantity ?? 1) + delta
+      if (quantity < 1) return
+      cart.value[index] = current.rowId
+        ? await updateCartItemRecord(current.rowId, { quantity })
+        : { ...current, quantity }
+    })
+  })().catch(error => showError('Unable to update item quantity', error))
 }
 
 const removeWish = async (id: CartItem['id']) => {

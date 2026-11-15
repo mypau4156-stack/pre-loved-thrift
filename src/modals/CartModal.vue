@@ -21,7 +21,7 @@
         <template v-else>
           <div v-if="stage === 'cart'" class="cart-stage">
             <div class="cart-main">
-              <h1>Your cart ({{ selectedCount || 1 }})</h1>
+              <h1>Your cart ({{ selectedCount }})</h1>
             <div v-if="user" class="customer-meta">
               <div class="meta-row"><span>Name</span><strong>{{ user.name || 'Guest' }}</strong></div>
               <div class="meta-row"><span>Phone</span><strong>{{ user.phone || 'No phone added' }}</strong></div>
@@ -40,9 +40,11 @@
                 <span v-if="it.size" class="item-size">Size: {{ it.size }}</span>
                 <div class="price-row"><span class="price">{{ formatPeso(it.price) }}</span></div>
                 <div class="qty-box" aria-label="Quantity selector">
-                  <button type="button" aria-label="Decrease quantity">−</button>
-                  <span>1</span>
-                  <button type="button" aria-label="Increase quantity">+</button>
+                  <button type="button" :aria-label="`Decrease quantity of ${it.name}`"
+                    :disabled="(it.quantity ?? 1) <= 1" @click="$emit('quantity', it.id, -1)">−</button>
+                  <span>{{ it.quantity ?? 1 }}</span>
+                  <button type="button" :aria-label="`Increase quantity of ${it.name}`"
+                    @click="$emit('quantity', it.id, 1)">+</button>
                 </div>
 
                 <div v-if="editingId === it.id" class="edit-panel">
@@ -202,15 +204,17 @@ const emit = defineEmits<{
   (e: 'edit', payload: { id: CartItem['id']; size?: string; note?: string }): void
   (e: 'toggle', id: CartItem['id']): void
   (e: 'toggle-all', value: boolean): void
+  (e: 'quantity', id: CartItem['id'], delta: number): void
 }>()
 
 const isOn = (it: CartItem) => it.selected !== false
 const selectedItems = computed(() => props.items.filter(isOn))
-const selectedCount = computed(() => selectedItems.value.length)
-const total = computed(() => selectedItems.value.reduce((s, i) => s + i.price, 0))
+const selectedLineCount = computed(() => selectedItems.value.length)
+const selectedCount = computed(() => selectedItems.value.reduce((sum, item) => sum + (item.quantity ?? 1), 0))
+const total = computed(() => selectedItems.value.reduce((sum, item) => sum + item.price * (item.quantity ?? 1), 0))
 const shippingPrice = computed(() => shippingFor(total.value))
 const totalPeso = computed(() => total.value + shippingPrice.value)
-const allSelected = computed(() => props.items.length > 0 && selectedCount.value === props.items.length)
+const allSelected = computed(() => props.items.length > 0 && selectedLineCount.value === props.items.length)
 
 const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 const sizesFor = (item: CartItem) => getProductSizes(item).length ? getProductSizes(item) : sizes

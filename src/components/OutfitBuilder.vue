@@ -81,16 +81,14 @@ const wardrobe = computed(() => props.cart.flatMap(item => {
  const productKey = String(item.id).split('::')[0]
  const product = outfitProducts.value.find(candidate => String(candidate.id) === productKey ||
   (item.productId !== undefined && String(candidate.productId) === String(item.productId)))
- const slot = product?.slot ?? (product
-  ? getProductSlot(product)
-  : undefined) ?? item.slot ?? (product
-  ? getProductSlot({
+ const slot = product
+  ? getProductSlot(product) ?? item.slot ?? getProductSlot({
     name: item.name,
     slot: item.slot,
     cat: item.cat,
     type: item.type
    })
-  : getProductSlot(item))
+  : getProductSlot(item) ?? item.slot
  return [{
   ...item,
   img: item.productId ? item.img : product?.img ?? item.img,

@@ -109,14 +109,26 @@ function placement(item: CartItem, target: FitBox) {
     }
   }
 
-  if (fit.contain && (item.slot === 'shoes' || !item.slot)) {
+  if (item.slot === 'shoes') {
+    const scaleX = target.width / (fit.right - fit.left)
+    const scaleY = target.height / (fit.bottom - fit.top)
+    return {
+      x: target.x - fit.left * scaleX,
+      y: target.y - fit.top * scaleY,
+      width: fit.imageWidth * scaleX,
+      height: fit.imageHeight * scaleY,
+    }
+  }
+
+  if (fit.contain && !item.slot) {
     const contentWidth = fit.right - fit.left
     const contentHeight = fit.bottom - fit.top
     const scale = Math.min(target.width / contentWidth, target.height / contentHeight)
     const fittedWidth = contentWidth * scale
+    const fittedHeight = contentHeight * scale
     return {
       x: target.x + (target.width - fittedWidth) / 2 - fit.left * scale,
-      y: target.y - fit.top * scale,
+      y: target.y + (item.slot === 'shoes' ? target.height - fittedHeight : 0) - fit.top * scale,
       width: fit.imageWidth * scale,
       height: fit.imageHeight * scale,
     }
@@ -132,7 +144,7 @@ function placement(item: CartItem, target: FitBox) {
 }
 
 function imageAspectRatio(item: CartItem) {
-  if (item.slot === 'bottom' || item.slot === 'top') return 'none'
+  if (item.slot === 'bottom' || item.slot === 'top' || item.slot === 'shoes') return 'none'
   return item.fit ? 'none' : 'xMidYMid meet'
 }
 
@@ -150,7 +162,7 @@ const geometry = computed(() => props.character.build === 'chubby' ? {
   bottom: { x: 88, y: 326, width: 124, height: 231 },
   shortBottom: { x: 88, y: 326, width: 124, height: 116 },
   dress: { x: 63, y: 151, width: 174, height: 404 },
-  shoes: { x: 84, y: 542, width: 132, height: 37 },
+  shoes: { x: 95, y: 534, width: 110, height: 40 },
 } : {
   torso: 'M111 166 Q150 153 189 166 L195 338 L195 384 L105 384 L105 338Z',
   arms: 'M109 174 L103 225 L88 325 M191 174 L197 225 L212 325',
@@ -161,7 +173,7 @@ const geometry = computed(() => props.character.build === 'chubby' ? {
   bottom: { x: 99, y: 326, width: 102, height: 231 },
   shortBottom: { x: 99, y: 326, width: 102, height: 116 },
   dress: { x: 75, y: 151, width: 150, height: 404 },
-  shoes: { x: 96, y: 542, width: 108, height: 37 },
+  shoes: { x: 95, y: 534, width: 110, height: 40 },
 })
 </script>
 

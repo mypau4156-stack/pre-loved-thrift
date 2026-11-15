@@ -26,6 +26,7 @@ function mapCartItem(row: DbCartItem): CartItem {
     name: row.name,
     price: money(row.price),
     img: row.image || '',
+    quantity: row.quantity || 1,
     slot: (row.slot as CartItem['slot']) || undefined,
     fit: (row.fit as CartItem['fit']) || undefined,
     selected: row.selected,
@@ -61,6 +62,7 @@ function mapOrderItem(row: DbOrderItem): CartItem {
     name: row.name,
     price: money(row.price),
     img: row.image || '',
+    quantity: row.quantity || 1,
     slot: (row.slot as CartItem['slot']) || undefined,
     fit: (row.fit as CartItem['fit']) || undefined,
     selected: true,
@@ -150,7 +152,7 @@ export async function addCartItemRecord(userId: string, item: CartItem): Promise
     type: item.type ?? null,
     slot: item.slot ?? null,
     fit: item.fit ?? null,
-    quantity: 1
+    quantity: item.quantity ?? 1
   }
 
   const { data, error } = await requireSupabase()
@@ -165,13 +167,14 @@ export async function addCartItemRecord(userId: string, item: CartItem): Promise
 
 export async function updateCartItemRecord(
   rowId: string,
-  patch: { size?: string; note?: string; image?: string; fit?: CartItem['fit'] }
+  patch: { size?: string; note?: string; image?: string; fit?: CartItem['fit']; quantity?: number }
 ): Promise<CartItem> {
   const update: Record<string, unknown> = {}
   if (patch.size !== undefined) update.size = patch.size
   if (patch.note !== undefined) update.note = patch.note || null
   if (patch.image !== undefined) update.image = patch.image
   if (patch.fit !== undefined) update.fit = patch.fit
+  if (patch.quantity !== undefined) update.quantity = patch.quantity
 
   const { data, error } = await requireSupabase()
     .from('cart_items')
@@ -264,7 +267,7 @@ function generateOrderCode(): string {
 
 export async function createOrder(input: CreateOrderInput): Promise<OrderRecord> {
   const client = requireSupabase()
-  const subtotal = input.items.reduce((sum, item) => sum + item.price, 0)
+  const subtotal = input.items.reduce((sum, item) => sum + item.price * (item.quantity ?? 1), 0)
   const shipping = shippingFor(subtotal)
   let code = generateOrderCode()
 
@@ -307,7 +310,7 @@ export async function createOrder(input: CreateOrderInput): Promise<OrderRecord>
         type: item.type ?? null,
         slot: item.slot ?? null,
         fit: item.fit ?? null,
-        quantity: 1
+        quantity: item.quantity ?? 1
       }))
 
       const { error: itemsError } = await client.from('order_items').insert(itemRows)
