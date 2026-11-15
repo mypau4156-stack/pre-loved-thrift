@@ -297,15 +297,16 @@
               <button type="submit" :disabled="!sellerMessageDrafts[`${order.id}:buyer-seller`]?.trim()">Send</button>
             </form>
           </section>
-          <section v-if="order.messages?.some((message) => message.channel === 'rider-seller')" class="inbox-thread">
+          <section v-if="order.rider || order.riderEmail || order.messages?.some((message) => message.channel === 'rider-seller')" class="inbox-thread">
             <h3>Rider <small>{{ order.rider || 'Assigned rider' }}</small></h3>
-            <div class="inbox-message-list">
+            <div v-if="order.messages?.some((message) => message.channel === 'rider-seller')" class="inbox-message-list">
               <div v-for="(message, index) in order.messages.filter((item) => item.channel === 'rider-seller')" :key="`${message.sentAt}-${index}`"
                 class="inbox-message" :class="{ own: message.sender === 'seller' }">
                 <b>{{ message.sender === 'seller' ? 'You' : order.rider || 'Rider' }}</b>
                 <p>{{ message.text }}</p><small>{{ formatTime(message.sentAt) }}</small>
               </div>
             </div>
+            <p v-else class="empty-note">No messages with this rider yet.</p>
             <form class="inbox-reply" @submit.prevent="replyToOrder(order, 'rider-seller')">
               <input v-model="sellerMessageDrafts[`${order.id}:rider-seller`]" maxlength="500" placeholder="Reply to rider…" :aria-label="`Reply to rider about ${order.id}`" />
               <button type="submit" :disabled="!sellerMessageDrafts[`${order.id}:rider-seller`]?.trim()">Send</button>
@@ -466,7 +467,8 @@ function defaultProductType(category: string) {
 }
 const orders = computed(() => props.orders)
 const sellerMessageOrders = computed(() => orders.value.filter((order) =>
-  order.messages?.some((message) => message.channel === 'buyer-seller' || message.channel === 'rider-seller')))
+  Boolean(order.rider?.trim() || order.riderEmail?.trim())
+  || order.messages?.some((message) => message.channel === 'buyer-seller' || message.channel === 'rider-seller')))
 const sellerInboxCount = computed(() => orders.value.reduce((total, order) =>
   total + (order.messages?.filter((message) => message.sender !== 'seller'
     && (message.channel === 'buyer-seller' || message.channel === 'rider-seller')).length ?? 0), 0)

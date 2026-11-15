@@ -120,12 +120,13 @@
                   </div>
                 </div>
 
-                <div v-if="isOrderConfirmed(order)" class="rider-row">
+                <div v-if="order.rider || order.riderEmail" class="rider-row">
                   <span>Rider</span>
                   <a v-if="order.riderPhone" class="rider-phone" :href="`tel:${order.riderPhone}`">
                     {{ order.rider || 'Rider' }} · {{ order.riderPhone }}
                   </a>
                   <strong v-else>{{ order.rider || 'Rider is being assigned' }}</strong>
+                  <button class="message-rider-button" type="button" @click="openBuyerMessenger(order.id)">Message rider</button>
                 </div>
 
                 <div v-if="order.customerAddress" class="customer-location-row">
@@ -149,22 +150,6 @@
                   <form class="customer-message-form" @submit.prevent="sendSellerMessage(order)">
                     <input v-model="sellerMessageDrafts[order.id]" maxlength="500" placeholder="Message the seller…" :aria-label="`Message seller about ${order.id}`" />
                     <button type="submit" :disabled="!sellerMessageDrafts[order.id]?.trim()">Send</button>
-                  </form>
-                </section>
-
-                <section v-if="isOrderConfirmed(order) && order.rider" class="order-messages">
-                  <b>Message {{ order.rider }}</b>
-                  <div v-if="order.messages?.some((message) => !message.channel || message.channel === 'delivery')" class="customer-message-list">
-                    <div v-for="(message, index) in order.messages.filter((item) => !item.channel || item.channel === 'delivery')" :key="`${message.sentAt}-${index}`"
-                      class="customer-message" :class="{ own: message.sender === 'customer' }">
-                      <small>{{ message.sender === 'customer' ? 'You' : order.rider }}</small>
-                      <p>{{ message.text }}</p>
-                    </div>
-                  </div>
-                  <p v-else class="no-customer-messages">Send your rider a delivery message.</p>
-                  <form class="customer-message-form" @submit.prevent="sendCustomerMessage(order)">
-                    <input v-model="messageDrafts[order.id]" maxlength="500" placeholder="Write a message…" :aria-label="`Message rider for ${order.id}`" />
-                    <button type="submit" :disabled="!messageDrafts[order.id]?.trim()">Send</button>
                   </form>
                 </section>
 
@@ -317,6 +302,53 @@
 
       </main>
     </div>
+    <aside v-if="buyerMessengerOpen" class="buyer-messenger" role="dialog" aria-label="Message rider">
+      <header class="buyer-messenger-header">
+        <img src="/assets/logo-emblem.png" alt="" />
+        <div><b>Messenger</b><small>Chat with your delivery rider</small></div>
+        <button type="button" aria-label="Close Messenger" @click="buyerMessengerOpen = false">×</button>
+      </header>
+      <div class="buyer-messenger-body">
+        <label class="buyer-chat-order">
+          <span>Select delivery</span>
+          <select v-model="selectedRiderOrderId" :disabled="!riderMessageOrders.length">
+            <option v-for="order in riderMessageOrders" :key="order.id" :value="order.id">
+              {{ orderLabel(order.id) }} · {{ order.rider || 'Rider' }}
+            </option>
+          </select>
+        </label>
+        <template v-if="selectedRiderOrder">
+          <div class="buyer-chat-context">
+            <b>Order {{ orderLabel(selectedRiderOrder.id) }}</b>
+            <span>{{ selectedRiderOrder.rider || 'Rider' }}</span>
+          </div>
+          <div class="buyer-chat-thread">
+            <div v-if="selectedRiderMessages.length" class="customer-message-list">
+              <div v-for="(message, index) in selectedRiderMessages" :key="`${message.sentAt}-${index}`"
+                class="customer-message" :class="{ own: message.sender === 'customer' }">
+                <small>{{ message.sender === 'customer' ? 'You' : selectedRiderOrder.rider || 'Rider' }}</small>
+                <p>{{ message.text }}</p>
+              </div>
+            </div>
+            <p v-else class="no-customer-messages">No messages yet. Send your rider a delivery message.</p>
+          </div>
+          <form class="customer-message-form" @submit.prevent="sendSelectedRiderMessage">
+            <input v-model="messageDrafts[selectedRiderOrder.id]" maxlength="500" placeholder="Message your rider…" aria-label="Message your rider" />
+            <button type="submit" :disabled="!messageDrafts[selectedRiderOrder.id]?.trim()">Send</button>
+          </form>
+        </template>
+        <div v-else class="buyer-messenger-empty">
+          <ion-icon :icon="chatbubbleEllipsesOutline" />
+          <b>No rider assigned yet</b>
+          <p>Once a rider is assigned to a confirmed order, you can message them here.</p>
+        </div>
+      </div>
+    </aside>
+    <button class="buyer-messenger-launcher" type="button" :aria-expanded="buyerMessengerOpen"
+      :aria-label="buyerMessengerOpen ? 'Close Messenger' : 'Open Messenger'"
+      @click="toggleBuyerMessenger">
+      <ion-icon :icon="chatbubbleEllipsesOutline" /><span>{{ buyerMessengerOpen ? 'Close Messenger' : 'Messenger' }}</span>
+    </button>
     <div v-if="profileEditOpen" class="profile-edit-overlay" @click.self="profileEditOpen = false">
       <div class="profile-edit-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
         <div class="profile-edit-header">
@@ -399,6 +431,8 @@ const view = ref<'overview' | 'orders' | 'wishlist' | 'profile' | 'categories' |
 const selectedCategory = ref('')
 const messageDrafts = reactive<Record<string, string>>({})
 const sellerMessageDrafts = reactive<Record<string, string>>({})
+const buyerMessengerOpen = ref(false)
+const selectedRiderOrderId = ref('')
 
 watch(() => props.initialView, (next) => {
   if (next) view.value = next
@@ -624,6 +658,10 @@ const isOrderConfirmed = (order: OrderRecord) => {
   const status = getOrderStatus(order).toLowerCase()
   return ['confirmed', 'packed', 'shipped', 'delivered'].includes(status)
 }
+const riderMessageOrders = computed(() => props.orders.filter(order => Boolean(order.rider?.trim() || order.riderEmail?.trim())))
+const selectedRiderOrder = computed(() => riderMessageOrders.value.find(order => order.id === selectedRiderOrderId.value))
+const selectedRiderMessages = computed(() => selectedRiderOrder.value?.messages
+  ?.filter(message => !message.channel || message.channel === 'delivery') ?? [])
 const getStepIndex = (order: OrderRecord) => {
   const status = getOrderStatus(order)
   return trackingSteps.findIndex((step) => step.toLowerCase() === status.toLowerCase())
@@ -775,12 +813,26 @@ function sendCustomerMessage(order: OrderRecord) {
   emit('message', order.id, { sender: 'customer', channel: 'delivery', text, sentAt: new Date().toISOString() })
   messageDrafts[order.id] = ''
 }
+function sendSelectedRiderMessage() {
+  if (selectedRiderOrder.value) sendCustomerMessage(selectedRiderOrder.value)
+}
+function openBuyerMessenger(orderId?: string) {
+  const requestedOrder = riderMessageOrders.value.find(order => order.id === orderId)
+  if (requestedOrder) selectedRiderOrderId.value = requestedOrder.id
+  else if (!selectedRiderOrder.value) selectedRiderOrderId.value = riderMessageOrders.value[0]?.id || ''
+  buyerMessengerOpen.value = true
+}
+function toggleBuyerMessenger() {
+  if (buyerMessengerOpen.value) buyerMessengerOpen.value = false
+  else openBuyerMessenger()
+}
 function sendSellerMessage(order: OrderRecord) {
   const text = sellerMessageDrafts[order.id]?.trim()
   if (!text) return
   emit('message', order.id, { sender: 'customer', channel: 'buyer-seller', text, sentAt: new Date().toISOString() })
   sellerMessageDrafts[order.id] = ''
 }
+defineExpose({ openBuyerMessenger })
 </script>
 
 <style scoped>
@@ -901,6 +953,8 @@ function sendSellerMessage(order: OrderRecord) {
 .rider-row { display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding-top: 4px; font-size: 12px; color: #8d7b74; }
 .rider-row strong { color: var(--ink); font-size: 15px; font-weight: 700; }
 .rider-phone { color: var(--coral-dark); font-size: 15px; font-weight: 700; text-decoration: none; }
+.message-rider-button { min-height: 34px; margin-left: auto; padding: 0 12px; border: 1px solid #e7b8b0; border-radius: 999px; background: #fffaf9; color: var(--coral-dark); cursor: pointer; font: 700 11px var(--font-body); }
+.message-rider-button:hover { background: #fff0ec; }
 .customer-location-row { display: grid; gap: 5px; padding-top: 4px; color: #8d7b74; font-size: 12px; }
 .customer-location-row strong { color: var(--ink); font-size: 12px; font-weight: 600; }
 .customer-proof { display: grid; justify-items: start; gap: 7px; color: #8d7b74; font-size: 12px; }
@@ -918,6 +972,25 @@ function sendSellerMessage(order: OrderRecord) {
 .customer-message-form input { min-width: 0; min-height: 38px; flex: 1; padding: 0 11px; border: 1px solid #eadfd9; border-radius: 10px; outline: none; font: 12px var(--font-body); }
 .customer-message-form button { padding: 0 14px; border: 0; border-radius: 10px; background: var(--coral); color: #fff; cursor: pointer; font: 700 11px var(--font-body); }
 .customer-message-form button:disabled { opacity: .5; cursor: not-allowed; }
+.buyer-messenger { position: fixed; right: 22px; bottom: 88px; z-index: 1100; width: min(410px, calc(100vw - 28px)); height: min(600px, calc(100vh - 120px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #f0e6e0; border-radius: 20px; background: #fbf9f6; box-shadow: 0 20px 60px #39231f35; }
+.buyer-messenger-header { min-height: 68px; padding: 10px 14px; display: flex; align-items: center; gap: 11px; background: linear-gradient(135deg, #e47a7a, #c45f5f); color: #fff; }
+.buyer-messenger-header img { width: 42px; height: 42px; border: 2px solid #ffffffa8; border-radius: 50%; background: #fbf9f6; object-fit: cover; }
+.buyer-messenger-header > div { flex: 1; display: grid; gap: 3px; }
+.buyer-messenger-header b { font-size: 14px; }
+.buyer-messenger-header small { font-size: 10px; opacity: .9; }
+.buyer-messenger-header button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #ffffff33; color: #fff; cursor: pointer; font-size: 24px; }
+.buyer-messenger-body { min-height: 0; flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.buyer-chat-order { display: grid; gap: 6px; color: #705f58; font-size: 10px; font-weight: 700; }
+.buyer-chat-order select { min-height: 38px; padding: 0 10px; border: 1px solid #eadfd9; border-radius: 10px; background: #fff; color: #493832; font: 12px var(--font-body); }
+.buyer-chat-context { display: flex; justify-content: space-between; gap: 8px; padding-bottom: 9px; border-bottom: 1px solid #f0e6e0; color: #493832; font-size: 11px; }
+.buyer-chat-context span { color: #927d75; }
+.buyer-chat-thread { min-height: 110px; flex: 1; }
+.buyer-messenger-empty { min-height: 170px; display: grid; align-content: center; justify-items: center; gap: 8px; color: #8d7b74; text-align: center; }
+.buyer-messenger-empty ion-icon { color: var(--coral); font-size: 30px; }
+.buyer-messenger-empty b { color: #493832; font-size: 13px; }
+.buyer-messenger-empty p { max-width: 260px; margin: 0; font-size: 11px; line-height: 1.5; }
+.buyer-messenger-launcher { position: fixed; right: 22px; bottom: 20px; z-index: 1101; min-height: 52px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 0; border-radius: 999px; background: var(--coral); color: #fff; box-shadow: 0 10px 28px #43231e3d; cursor: pointer; font: 700 13px var(--font-body); }
+.buyer-messenger-launcher ion-icon { font-size: 19px; }
 .buy-again { width: fit-content; border: 1px solid #e7b8b0; border-radius: 12px; padding: 10px 22px; background: transparent; color: var(--coral-dark); font: 700 14px var(--font-body); cursor: pointer; }
 .profile-card { display: flex; align-items:  center; gap: 20px; padding: 26px; position: relative; }
 .profile-avatar { width: 68px; height: 68px; font-size: 30px; }
@@ -1386,6 +1459,8 @@ function sendSellerMessage(order: OrderRecord) {
   .stats article b { font-size: 16px; }
   .stats article small { font-size: 9px; }
   .panel { padding: 16px; }
+  .rider-row { flex-wrap: wrap; }
+  .message-rider-button { margin-left: 0; }
   .empty-state { align-items: flex-start; flex-wrap: wrap; }
   .empty-state div { min-width: calc(100% - 58px); }
   .empty-state .outline-button { margin-left: 57px; }
@@ -1396,6 +1471,8 @@ function sendSellerMessage(order: OrderRecord) {
   .profile-card { align-items: flex-start; padding-top: 68px; }
   .profile-details { grid-template-columns: 1fr; gap: 14px; }
   .review-overlay { align-items: flex-end; padding: 10px; }
+  .buyer-messenger { right: 12px; bottom: 76px; width: calc(100vw - 24px); height: min(560px, calc(100vh - 98px)); border-radius: 17px; }
+  .buyer-messenger-launcher { right: 14px; bottom: 14px; min-height: 48px; }
   .review-modal { width: min(100%, 560px); max-height: 88dvh; border-radius: 22px; }
   .review-header { gap: 8px; padding: 11px 14px; }
   .review-back { width: 34px; height: 34px; }

@@ -412,12 +412,14 @@ export async function updateDeliveryOrder(dbId: string, patch: DeliveryPatch): P
 
 export async function addOrderMessageRecord(dbId: string, message: OrderMessage): Promise<void> {
   const client = requireSupabase()
-  const { data: { user } } = await client.auth.getUser()
+  const { data: { user }, error: authError } = await client.auth.getUser()
+  if (authError) throw authError
+  if (!user) throw new Error('Please sign in again before sending a message.')
   const { error } = await client.from('order_messages').insert({
     order_id: dbId,
     sender: message.sender,
     channel: message.channel ?? 'delivery',
-    sender_id: user?.id ?? null,
+    sender_id: user.id,
     text: message.text
   })
   if (error) throw error

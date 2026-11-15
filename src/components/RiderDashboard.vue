@@ -23,29 +23,34 @@
 
     <div v-if="profileOpen" class="profile-overlay" @click.self="profileOpen = false">
       <section class="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="rider-profile-title">
-        <button class="profile-close" type="button" aria-label="Close profile editor" @click="profileOpen = false">×</button>
-        <span class="eyebrow">ACCOUNT SETTINGS</span>
-        <h2 id="rider-profile-title">Rider profile</h2>
-        <div class="rider-edit-photo">
-          <span class="rider-edit-avatar">
-            <img v-if="profileDraft.avatar" :src="profileDraft.avatar" alt="Rider profile photo preview" />
-            <template v-else>{{ (profileDraft.name || rider.name).charAt(0).toUpperCase() }}</template>
-          </span>
-          <input ref="profilePhotoInput" class="rider-photo-input" type="file" accept="image/png,image/jpeg,image/webp" @change="handleProfilePhoto" />
-          <button type="button" class="profile-photo-button" @click="profilePhotoInput?.click()">Upload profile photo</button>
-          <button v-if="profileDraft.avatar" type="button" class="profile-photo-remove" @click="profileDraft.avatar = ''">Remove photo</button>
-        </div>
-        <form class="profile-form" @submit.prevent="saveProfile">
-          <label>Full name<input v-model.trim="profileDraft.name" required maxlength="80" autocomplete="name" /></label>
-          <label>Phone number<input v-model.trim="profileDraft.phone" type="tel" autocomplete="tel" placeholder="09xx xxx xxxx" /></label>
-          <label>Gmail address<input :value="rider.email" type="email" disabled /></label>
-          <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
-          <div class="profile-actions">
-            <button type="button" class="profile-cancel" @click="profileOpen = false">Cancel</button>
-            <button type="submit" class="profile-save">Save changes</button>
+        <header class="profile-dialog-header">
+          <div class="profile-brand"><img src="/assets/logo-emblem.png" alt="Pre-Loved Thrift" /><span>PRE-LOVED<br />THRIFT</span></div>
+          <button class="profile-close" type="button" aria-label="Close profile editor" @click="profileOpen = false">×</button>
+        </header>
+        <div class="profile-dialog-body">
+          <span class="eyebrow">ACCOUNT SETTINGS</span>
+          <h2 id="rider-profile-title">Rider profile</h2>
+          <div class="rider-edit-photo">
+            <span class="rider-edit-avatar">
+              <img v-if="profileDraft.avatar" :src="profileDraft.avatar" alt="Rider profile photo preview" />
+              <template v-else>{{ (profileDraft.name || rider.name).charAt(0).toUpperCase() }}</template>
+            </span>
+            <input ref="profilePhotoInput" class="rider-photo-input" type="file" accept="image/png,image/jpeg,image/webp" @change="handleProfilePhoto" />
+            <button type="button" class="profile-photo-button" @click="profilePhotoInput?.click()">Upload profile photo</button>
+            <button v-if="profileDraft.avatar" type="button" class="profile-photo-remove" @click="profileDraft.avatar = ''">Remove photo</button>
           </div>
-        </form>
-        <ChangePasswordForm />
+          <form id="rider-profile-form" class="profile-form" @submit.prevent="saveProfile">
+            <label><span>Full name</span><input v-model.trim="profileDraft.name" required maxlength="80" autocomplete="name" /></label>
+            <label><span>Phone number</span><input v-model.trim="profileDraft.phone" type="tel" autocomplete="tel" placeholder="09xx xxx xxxx" /></label>
+            <label><span>Gmail address</span><input :value="rider.email" type="email" disabled /></label>
+            <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
+          </form>
+          <ChangePasswordForm />
+        </div>
+        <div class="profile-actions">
+          <button type="button" class="profile-cancel" @click="profileOpen = false">Cancel</button>
+          <button type="submit" form="rider-profile-form" class="profile-save">Save changes</button>
+        </div>
       </section>
     </div>
 
@@ -122,40 +127,65 @@
             <small v-if="order.deliveryCompletedAt" class="completed-date">Completed {{ formatDate(order.deliveryCompletedAt) }}</small>
           </section>
 
-          <section class="message-section">
-            <span class="section-label">MESSAGE SELLER</span>
-            <div v-if="order.messages?.some((message) => message.channel === 'rider-seller')" class="message-list">
-              <div v-for="(message, index) in order.messages.filter((item) => item.channel === 'rider-seller')" :key="`${message.sentAt}-${index}`"
-                class="message-bubble" :class="{ own: message.sender === 'rider' }">
-                <b>{{ message.sender === 'rider' ? 'You' : 'Seller' }}</b>
-                <p>{{ message.text }}</p><small>{{ formatDateTime(message.sentAt) }}</small>
-              </div>
-            </div>
-            <p v-else class="no-messages">Ask the seller about this delivery.</p>
-            <form class="message-form" @submit.prevent="sendSellerMessage(order)">
-              <input v-model="sellerDrafts[order.id]" maxlength="500" placeholder="Message the seller…" :aria-label="`Message seller about ${order.id}`" />
-              <button type="submit" :disabled="!sellerDrafts[order.id]?.trim()">Send</button>
-            </form>
-          </section>
-
-          <section class="message-section">
-            <span class="section-label">CUSTOMER MESSAGES</span>
-            <div v-if="order.messages?.some((message) => !message.channel || message.channel === 'delivery')" class="message-list">
-              <div v-for="(message, index) in order.messages.filter((item) => !item.channel || item.channel === 'delivery')" :key="`${message.sentAt}-${index}`"
-                class="message-bubble" :class="{ own: message.sender === 'rider' }">
-                <b>{{ message.sender === 'rider' ? 'You' : order.customerName || 'Customer' }}</b>
-                <p>{{ message.text }}</p><small>{{ formatDateTime(message.sentAt) }}</small>
-              </div>
-            </div>
-            <p v-else class="no-messages">No messages yet. Send the customer a delivery update.</p>
-            <form class="message-form" @submit.prevent="sendMessage(order)">
-              <input v-model="drafts[order.id]" maxlength="500" placeholder="Message the customer…" :aria-label="`Message for ${order.id}`" />
-              <button type="submit" :disabled="!drafts[order.id]?.trim()">Send</button>
-            </form>
-          </section>
         </article>
       </div>
     </main>
+    <aside v-if="sellerMessengerOpen" class="rider-messenger" role="dialog" aria-label="Messenger">
+      <header class="rider-messenger-header">
+        <img src="/assets/logo-emblem.png" alt="" />
+        <div><b>Messenger</b><small>Chat with the seller or customer</small></div>
+        <button type="button" aria-label="Close Messenger" @click="sellerMessengerOpen = false">×</button>
+      </header>
+      <div class="rider-messenger-body">
+        <label class="rider-chat-order">
+          <span>Select delivery</span>
+          <select v-model="selectedSellerOrderId" :disabled="!assignedOrders.length">
+            <option v-for="order in assignedOrders" :key="order.id" :value="order.id">
+              {{ order.id }} · {{ order.status || 'Confirmed' }}
+            </option>
+          </select>
+        </label>
+        <label class="rider-chat-order">
+          <span>Message</span>
+          <select v-model="selectedMessageChannel" :disabled="!assignedOrders.length">
+            <option value="rider-seller">Seller</option>
+            <option value="delivery">Customer</option>
+          </select>
+        </label>
+        <template v-if="selectedSellerOrder">
+          <div class="rider-chat-context">
+            <b>Order {{ selectedSellerOrder.id }}</b>
+            <span>{{ selectedMessageChannel === 'rider-seller' ? 'Seller' : selectedSellerOrder.customerName || 'Customer' }}</span>
+          </div>
+          <div class="rider-chat-thread">
+            <div v-if="selectedMessengerMessages.length" class="message-list">
+              <div v-for="(message, index) in selectedMessengerMessages" :key="`${message.sentAt}-${index}`"
+                class="message-bubble" :class="{ own: message.sender === 'rider' }">
+                <b>{{ messengerSender(message) }}</b>
+                <p>{{ message.text }}</p><small>{{ formatDateTime(message.sentAt) }}</small>
+              </div>
+            </div>
+            <p v-else class="no-messages">No messages yet. Start a conversation about this delivery.</p>
+          </div>
+          <form class="message-form" @submit.prevent="sendMessengerMessage">
+            <input v-model="selectedMessengerDraft" maxlength="500"
+              :placeholder="`Message the ${selectedMessageChannel === 'rider-seller' ? 'seller' : 'customer'}…`"
+              :aria-label="`Message the ${selectedMessageChannel === 'rider-seller' ? 'seller' : 'customer'}`" />
+            <button type="submit" :disabled="!selectedMessengerDraft.trim()">Send</button>
+          </form>
+        </template>
+        <div v-else class="rider-messenger-empty">
+          <ion-icon :icon="chatbubbleEllipsesOutline" />
+          <b>No assigned deliveries yet</b>
+          <p>Once a delivery is assigned to you, you can message the seller or customer here.</p>
+        </div>
+      </div>
+    </aside>
+    <button class="rider-messenger-launcher" type="button" :aria-expanded="sellerMessengerOpen"
+      :aria-label="sellerMessengerOpen ? 'Close Messenger' : 'Open Messenger'"
+      @click="toggleSellerMessenger">
+      <ion-icon :icon="chatbubbleEllipsesOutline" /><span>{{ sellerMessengerOpen ? 'Close Messenger' : 'Messenger' }}</span>
+    </button>
   </section>
 </template>
 
@@ -163,7 +193,7 @@
 import { computed, reactive, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import ChangePasswordForm from './ChangePasswordForm.vue'
-import { locationOutline, personCircleOutline } from 'ionicons/icons'
+import { chatbubbleEllipsesOutline, locationOutline, personCircleOutline } from 'ionicons/icons'
 import type { OrderMessage, OrderRecord } from '../data/mockData'
 
 const props = defineProps<{
@@ -179,9 +209,11 @@ const emit = defineEmits<{
 }>()
 
 const tab = ref<'active' | 'history'>('active')
-const drafts = reactive<Record<string, string>>({})
-const sellerDrafts = reactive<Record<string, string>>({})
+const messengerDrafts = reactive<Record<string, string>>({})
 const errors = reactive<Record<string, string>>({})
+const sellerMessengerOpen = ref(false)
+const selectedSellerOrderId = ref('')
+const selectedMessageChannel = ref<'rider-seller' | 'delivery'>('rider-seller')
 const profileOpen = ref(false)
 const accountMenuOpen = ref(false)
 const profileDraft = reactive({ name: props.rider.name, phone: props.rider.phone || '', avatar: props.rider.avatar || '' })
@@ -196,6 +228,23 @@ const assignedOrders = computed(() => props.orders.filter(order => {
 const activeOrders = computed(() => assignedOrders.value.filter(order => order.status !== 'Delivered' && order.status !== 'Cancelled'))
 const historyOrders = computed(() => assignedOrders.value.filter(order => order.status === 'Delivered').sort((a, b) => Date.parse(b.deliveryCompletedAt || b.date) - Date.parse(a.deliveryCompletedAt || a.date)))
 const visibleOrders = computed(() => tab.value === 'active' ? activeOrders.value : historyOrders.value)
+const selectedSellerOrder = computed(() => assignedOrders.value.find(order => order.id === selectedSellerOrderId.value))
+const selectedMessengerDraft = computed({
+  get: () => selectedSellerOrderId.value
+    ? messengerDrafts[`${selectedSellerOrderId.value}:${selectedMessageChannel.value}`] || ''
+    : '',
+  set: (value: string) => {
+    if (selectedSellerOrderId.value) {
+      messengerDrafts[`${selectedSellerOrderId.value}:${selectedMessageChannel.value}`] = value
+    }
+  }
+})
+const selectedMessengerMessages = computed(() => {
+  const messages = selectedSellerOrder.value?.messages ?? []
+  return messages.filter(message => selectedMessageChannel.value === 'rider-seller'
+    ? message.channel === 'rider-seller'
+    : !message.channel || message.channel === 'delivery')
+})
 
 function isItemDelivered(order: OrderRecord, index: number) {
   return order.deliveredItemIndexes?.includes(index) ?? false
@@ -217,17 +266,30 @@ function completeDelivery(order: OrderRecord) {
   }
   emit('order-update', order.id, { status: 'Delivered', deliveryCompletedAt: new Date().toISOString() })
 }
-function sendMessage(order: OrderRecord) {
-  const text = drafts[order.id]?.trim()
-  if (!text) return
-  emit('message', order.id, { sender: 'rider', channel: 'delivery', text, sentAt: new Date().toISOString() })
-  drafts[order.id] = ''
+function messengerSender(message: OrderMessage) {
+  if (message.sender === 'rider') return 'You'
+  if (selectedMessageChannel.value === 'rider-seller') return 'Seller'
+  return selectedSellerOrder.value?.customerName || 'Customer'
 }
-function sendSellerMessage(order: OrderRecord) {
-  const text = sellerDrafts[order.id]?.trim()
-  if (!text) return
-  emit('message', order.id, { sender: 'rider', channel: 'rider-seller', text, sentAt: new Date().toISOString() })
-  sellerDrafts[order.id] = ''
+function sendMessengerMessage() {
+  const order = selectedSellerOrder.value
+  const text = selectedMessengerDraft.value.trim()
+  if (!order || !text) return
+  emit('message', order.id, {
+    sender: 'rider',
+    channel: selectedMessageChannel.value,
+    text,
+    sentAt: new Date().toISOString()
+  })
+  selectedMessengerDraft.value = ''
+}
+function toggleSellerMessenger() {
+  if (sellerMessengerOpen.value) {
+    sellerMessengerOpen.value = false
+    return
+  }
+  if (!selectedSellerOrder.value) selectedSellerOrderId.value = assignedOrders.value[0]?.id || ''
+  sellerMessengerOpen.value = true
 }
 function openProfile() {
   accountMenuOpen.value = false
@@ -331,6 +393,8 @@ function formatDateTime(value: string) {
 
 <style scoped>
 .rider-page { min-height: 100vh; padding-bottom: 48px; background: #fbf9f6; color: var(--ink); }
+.rider-messenger-launcher { position: fixed; right: 22px; bottom: 20px; z-index: 1101; min-height: 52px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 0; border-radius: 999px; background: var(--coral); color: #fff; box-shadow: 0 10px 28px #43231e3d; cursor: pointer; font: 700 13px var(--font-body); }
+.rider-messenger-launcher ion-icon { font-size: 19px; }
 .rider-header { min-height: 76px; padding: 10px max(20px, calc((100% - 1120px) / 2)); display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #f0e6e0; background: #fff; }
 .rider-brand { display: flex; align-items: center; gap: 11px; color: inherit; text-decoration: none; cursor: pointer; }
 .rider-brand img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
@@ -349,26 +413,31 @@ function formatDateTime(value: string) {
 .account-info small, .account-info span { overflow: hidden; color: #927d75; font-size: 10px; text-overflow: ellipsis; }
 .account-menu > button { padding: 9px; border: 0; border-radius: 8px; background: transparent; color: #644f47; text-align: left; }
 .account-menu > button:hover { background: #fff5f2; }
-.profile-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: #2e201f70; }
-.profile-dialog { position: relative; width: min(420px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 25px; border: 1px solid #f0e6e0; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px #39231f30; }
-.profile-close { position: absolute; top: 12px; right: 14px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #fbf3f0; color: #705f58; cursor: pointer; font-size: 22px; }
-.profile-dialog h2 { margin: 6px 0 18px; color: #3e2e2a; font: 700 24px var(--font-head); }
-.rider-edit-photo { display: flex; align-items: center; gap: 12px; margin: -4px 0 16px; }
-.rider-edit-avatar { width: 54px; height: 54px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #f9e2df; color: var(--coral-dark); font-size: 20px; font-weight: 700; }
+.profile-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 16px; background: rgba(25, 10, 10, .18); }
+.profile-dialog { width: min(480px, calc(100vw - 26px)); max-height: calc(100vh - 32px); overflow-y: auto; overflow-x: hidden; border: 0; border-radius: 22px; background: #fff; box-shadow: 0 16px 36px rgba(70, 28, 28, .18); }
+.profile-dialog-header { position: relative; min-height: 72px; padding: 14px 18px 12px; display: flex; align-items: center; justify-content: center; background: #e9b1a8; }
+.profile-brand { display: flex; align-items: center; gap: 10px; color: #2a2323; font-size: 10px; font-weight: 800; letter-spacing: .04em; line-height: 1.1; text-transform: uppercase; }
+.profile-brand img { width: 30px; height: 30px; display: block; border: 1px solid rgba(255,255,255,.8); border-radius: 50%; background: rgba(255,255,255,.22); object-fit: contain; }
+.profile-close { position: absolute; top: 50%; right: 18px; width: 30px; height: 30px; transform: translateY(-50%); border: 0; border-radius: 50%; background: rgba(255,255,255,.35); color: #2a2323; cursor: pointer; font-size: 20px; }
+.profile-dialog-body { padding: 16px 20px 0; display: grid; gap: 13px; }
+.profile-dialog-body > :deep(.password-panel) { margin-top: 0; }
+.profile-dialog-body h2 { margin: -7px 0 0; color: #3e2e2a; font: 700 24px var(--font-head); }
+.rider-edit-photo { display: flex; align-items: center; gap: 10px; }
+.rider-edit-avatar { width: 58px; height: 58px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #f9e2df; color: var(--coral-dark); font-size: 22px; font-weight: 700; }
 .rider-edit-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .rider-photo-input { display: none; }
 .profile-photo-button, .profile-photo-remove { padding: 8px 10px; border: 1px solid #eadfd9; border-radius: 9px; background: #fff; color: var(--coral-dark); cursor: pointer; font: 700 10px var(--font-body); }
 .profile-photo-remove { color: #705f58; }
-.profile-form { display: grid; gap: 14px; }
-.profile-form label { display: grid; gap: 6px; color: #705f58; font-size: 11px; font-weight: 700; }
-.profile-form input { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid #eadfd9; border-radius: 11px; outline: none; color: #493832; font: 13px var(--font-body); }
-.profile-form input:focus { border-color: var(--coral); }
+.profile-form { display: grid; gap: 12px; }
+.profile-form label { display: grid; gap: 7px; color: #1f1b1b; font-size: 12px; font-weight: 700; }
+.profile-form input { width: 100%; min-height: 42px; box-sizing: border-box; padding: 11px 13px; border: 1px solid #d8cfc9; border-radius: 12px; outline: none; background: #fff; color: #493832; font: 13px var(--font-body); }
+.profile-form input:focus { border-color: var(--coral); box-shadow: 0 0 0 2px rgba(196,95,95,.12); }
 .profile-form input:disabled { background: #f7f3f0; color: #99877f; }
 .profile-error { margin: 0; color: #b5473e; font-size: 11px; }
-.profile-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.profile-actions button { min-height: 38px; padding: 0 13px; border-radius: 10px; cursor: pointer; font: 700 11px var(--font-body); }
+.profile-actions { display: flex; justify-content: flex-end; align-items: center; gap: 14px; padding: 16px 20px 20px; }
+.profile-actions button { min-height: 40px; padding: 0 16px; border-radius: 14px; cursor: pointer; font: 700 13px var(--font-body); }
 .profile-cancel { border: 1px solid #eadfd9; background: #fff; color: #705f58; }
-.profile-save { border: 0; background: var(--coral); color: #fff; }
+.profile-save { border: 0; background: #e56c6c; color: #fff; }
 .rider-content { width: min(1050px, calc(100% - 32px)); margin: 28px auto; display: grid; gap: 18px; }
 .rider-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 24px; border: 1px solid #f1dfd4; border-radius: 18px; background: #fff0e6; }
 .eyebrow, .section-label { color: #a17870; font-size: 9px; font-weight: 800; letter-spacing: .15em; }
@@ -398,7 +467,7 @@ function formatDateTime(value: string) {
 .contact-copy span { color: var(--muted); font-size: 10px; }
 .contact-copy b { color: #493832; font-size: 13px; }
 .contact-copy small { color: var(--muted); font-size: 11px; }
-.customer-location, .delivery-products, .delivery-proof, .message-section { display: grid; gap: 9px; }
+.customer-location, .delivery-products, .delivery-proof { display: grid; gap: 9px; }
 .customer-location p, .delivery-proof > p { margin: 0; color: #5a4943; font-size: 12px; line-height: 1.5; }
 .customer-location .directions-logo { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-radius: 50%; color: var(--coral-dark); font-size: 20px; }
 .customer-location .directions-logo:hover { background: #fff5f2; border-color: #e8c9c1; }
@@ -427,6 +496,26 @@ function formatDateTime(value: string) {
 .message-form input { min-width: 0; min-height: 38px; flex: 1; padding: 0 11px; border: 1px solid #eadfd9; border-radius: 10px; outline: none; font: 12px var(--font-body); }
 .message-form button { padding: 0 14px; border: 0; border-radius: 10px; background: var(--coral); color: #fff; cursor: pointer; font: 700 11px var(--font-body); }
 .message-form button:disabled { opacity: .5; cursor: not-allowed; }
+.rider-messenger { position: fixed; right: 22px; bottom: 88px; z-index: 1100; width: min(410px, calc(100vw - 28px)); height: min(600px, calc(100vh - 120px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #f0e6e0; border-radius: 20px; background: #fbf9f6; box-shadow: 0 20px 60px #39231f35; }
+.rider-messenger-header { min-height: 68px; padding: 10px 14px; display: flex; align-items: center; gap: 11px; background: linear-gradient(135deg, #e47a7a, #c45f5f); color: #fff; }
+.rider-messenger-header img { width: 42px; height: 42px; border: 2px solid #ffffffa8; border-radius: 50%; background: #fbf9f6; object-fit: cover; }
+.rider-messenger-header > div { flex: 1; display: grid; gap: 3px; }
+.rider-messenger-header b { font-size: 14px; }
+.rider-messenger-header small { font-size: 10px; opacity: .9; }
+.rider-messenger-header button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #ffffff33; color: #fff; cursor: pointer; font-size: 24px; }
+.rider-messenger-body { min-height: 0; flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.rider-chat-order { display: grid; gap: 6px; color: #705f58; font-size: 10px; font-weight: 700; }
+.rider-chat-order select { min-height: 38px; padding: 0 10px; border: 1px solid #eadfd9; border-radius: 10px; background: #fff; color: #493832; font: 12px var(--font-body); }
+.rider-chat-order select:disabled { color: #99877f; }
+.rider-chat-context { display: flex; justify-content: space-between; gap: 8px; padding-bottom: 9px; border-bottom: 1px solid #f0e6e0; color: #493832; font-size: 11px; }
+.rider-chat-context span { color: #927d75; }
+.rider-chat-thread { min-height: 110px; flex: 1; }
+.rider-messenger-empty { min-height: 170px; display: grid; align-content: center; justify-items: center; gap: 8px; color: #8d7b74; text-align: center; }
+.rider-messenger-empty ion-icon { color: var(--coral); font-size: 30px; }
+.rider-messenger-empty b { color: #493832; font-size: 13px; }
+.rider-messenger-empty p { max-width: 260px; margin: 0; font-size: 11px; line-height: 1.5; }
+.rider-messenger-launcher { position: fixed; right: 22px; bottom: 20px; z-index: 1101; min-height: 52px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 0; border-radius: 999px; background: var(--coral); color: #fff; box-shadow: 0 10px 28px #43231e3d; cursor: pointer; font: 700 13px var(--font-body); }
+.rider-messenger-launcher ion-icon { font-size: 19px; }
 @media (max-width: 600px) {
   .rider-header { padding: 9px 12px; }
   .rider-brand img { width: 38px; height: 38px; }
@@ -439,5 +528,7 @@ function formatDateTime(value: string) {
   .delivery-count { min-width: 78px; padding: 9px 7px; }
   .delivery-count span { font-size: 9px; }
   .delivery-card { padding: 14px; }
+  .rider-messenger { right: 12px; bottom: 76px; width: calc(100vw - 24px); height: min(560px, calc(100vh - 98px)); border-radius: 17px; }
+  .rider-messenger-launcher { right: 14px; bottom: 14px; min-height: 48px; }
 }
 </style>

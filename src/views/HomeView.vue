@@ -11,7 +11,7 @@
           :search-open="searchOpen" :profile-open="dashboardOpen || authOpen" :dashboard-mode="dashboardOpen"
         @open-auth="authOpen = true" @open-user="openCustomerDashboard('overview')"
         @open-seller-center="openSellerAuth" @logout="confirmBuyerLogout"
-        @open-search="searchOpen = true" @open-chat="chatOpen = true"
+        @open-search="searchOpen = true" @open-chat="chatOpen = true" @open-messenger="openBuyerMessenger"
         @open-wish="wishOpen = true" @open-cart="cartOpen = true"
         @navigate="handleHeaderNavigation" />
       <div v-if="!dashboardOpen && !sellerOpen && !riderOpen" class="storefront">
@@ -27,7 +27,7 @@
         </section>
         <AppFooter />
       </div>
-      <UserDashboard v-if="user" :key="dashboardView" v-show="dashboardOpen" :user="user" :wishlist="wished" :cart-count="cartItemCount"
+      <UserDashboard ref="userDashboardRef" v-if="user" :key="dashboardView" v-show="dashboardOpen" :user="user" :wishlist="wished" :cart-count="cartItemCount"
         :orders="orders" :products="dashboardProducts" :categories="categories" :initial-view="dashboardView"
         @storefront="dashboardOpen = false"
         @add-cart="dashboardAddToCart" @buy-again="buyAgain" @toggle-wish="dashboardToggleWish"
@@ -153,6 +153,10 @@ type RiderAccount = RiderSummary
 type ProfileUpdate = { name: string; email: string; phone?: string; address?: string; avatar?: string }
 
 const authOpen = ref(false), sellerAuthOpen = ref(false), riderAuthOpen = ref(false), dashboardOpen = ref(false), sellerOpen = ref(false), riderOpen = ref(false), searchOpen = ref(false), chatOpen = ref(false)
+const userDashboardRef = ref<{ openBuyerMessenger: () => void } | null>(null)
+function openBuyerMessenger() {
+  userDashboardRef.value?.openBuyerMessenger()
+}
 const sellerChatOpen = ref(false)
 const cartOpen = ref(false), wishOpen = ref(false), checkoutLoading = ref(false)
 const dashboardView = ref<'overview' | 'orders' | 'wishlist' | 'profile' | 'categories'>('overview')
@@ -188,7 +192,11 @@ function showCartToast() {
 }
 
 function errorMessage(error: unknown, fallback = 'Please try again.') {
-  return error instanceof Error ? error.message : fallback
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return fallback
 }
 
 async function showError(header: string, error: unknown, fallback = 'Please try again.') {

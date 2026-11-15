@@ -37,11 +37,11 @@
                 <button
                     class="chat-help-button"
                     type="button"
-                    aria-label="Open Pre-Loved Thrift assistant"
-                    @click="$emit('open-chat')"
+                    :aria-label="dashboardMode ? 'Open Messenger' : 'Open Pre-Loved Thrift assistant'"
+                    @click="dashboardMode ? $emit('open-messenger') : $emit('open-chat')"
                 >
                     <ion-icon :icon="chatbubbleEllipsesOutline" />
-                    <span>Ask us</span>
+                    <span>{{ dashboardMode ? 'Messenger' : 'Ask us' }}</span>
                 </button>
 
                 <button
@@ -168,6 +168,7 @@ const emit = defineEmits<{
     (e: "logout"): void;
     (e: "open-search"): void;
     (e: "open-chat"): void;
+    (e: "open-messenger"): void;
     (e: "open-cart"): void;
     (e: "open-wish"): void;
     (e: "navigate", id: string): void;

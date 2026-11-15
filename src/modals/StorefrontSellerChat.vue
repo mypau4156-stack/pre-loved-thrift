@@ -3,7 +3,7 @@
     <section class="store-chat" aria-label="Message the seller">
       <header class="store-chat-header">
         <img class="store-chat-logo" src="/assets/logo-emblem.png" alt="Pre-Loved Thrift logo" />
-        <div><b>{{ sellerName }}</b><small>Storefront messenger</small></div>
+        <div><b>{{ sellerName }}</b></div>
         <button type="button" aria-label="Close chat" @click="$emit('close')"><ion-icon :icon="closeOutline" /></button>
       </header>
 
