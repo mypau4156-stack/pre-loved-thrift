@@ -509,7 +509,7 @@ const paymentTotals = computed(() => {
     current.count += 1
     totals.set(paymentName, current)
   }
-  return ['GCash', 'Card', 'Cash on delivery', 'Unspecified'].map((name) => ({
+  return ['GCash', 'Cash on delivery', 'Unspecified'].map((name) => ({
     name,
     amount: totals.get(name)?.amount ?? 0,
     count: totals.get(name)?.count ?? 0
