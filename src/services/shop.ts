@@ -424,9 +424,17 @@ export async function addOrderMessageRecord(dbId: string, message: OrderMessage)
   const { data: { user }, error: authError } = await client.auth.getUser()
   if (authError) throw authError
   if (!user) throw new Error('Please sign in again before sending a message.')
+
+  const rawSender = String(message.sender ?? '').trim().toLowerCase()
+  const sender = rawSender === 'buyer' ? 'customer' : rawSender
+  const allowedSenders = ['rider', 'customer', 'seller'] as const
+  if (!allowedSenders.includes(sender as typeof allowedSenders[number])) {
+    throw new Error(`Invalid order message sender: ${String(message.sender)}`)
+  }
+
   const { error } = await client.from('order_messages').insert({
     order_id: dbId,
-    sender: message.sender,
+    sender,
     channel: message.channel ?? 'delivery',
     sender_id: user.id,
     text: message.text

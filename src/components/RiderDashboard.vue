@@ -105,9 +105,11 @@
             <label v-for="(item, index) in order.items" :key="`${order.id}-${index}`" class="delivery-item">
               <img :src="item.img || fallbackImage" :alt="item.name" />
               <span><b>{{ item.name }}</b><small>{{ item.size ? `Size ${item.size}` : 'Order item' }}</small></span>
-              <input type="checkbox" :checked="isItemDelivered(order, index)" :aria-label="`${item.name} delivered`"
-                @change="toggleDeliveredItem(order, index, ($event.target as HTMLInputElement).checked)" />
-              <small class="item-delivery-state">{{ isItemDelivered(order, index) ? 'Delivered' : 'Not delivered' }}</small>
+              <template v-if="order.status !== 'Delivered'">
+                <input type="checkbox" :checked="isItemDelivered(order, index)" :aria-label="`${item.name} delivered`"
+                  @change="toggleDeliveredItem(order, index, ($event.target as HTMLInputElement).checked)" />
+              </template>
+              <small class="item-delivery-state">{{ order.status === 'Delivered' ? 'Delivered' : (isItemDelivered(order, index) ? 'Delivered' : 'Not delivered') }}</small>
             </label>
           </section>
 
