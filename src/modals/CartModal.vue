@@ -27,7 +27,7 @@
               <div class="meta-row"><span>Phone</span><strong>{{ user.phone || 'No phone added' }}</strong></div>
               <div class="meta-row"><span>Address</span><strong>{{ user.address || 'No address added' }}</strong></div>
             </div>
-            <p class="shipping-copy">Free shipping on orders over ₱2,900</p>
+            <p class="shipping-copy">Shipping is ₱50 for every order</p>
             <div class="shipping-bar"><span></span></div>
 
             <div class="item-card" v-for="it in items" :key="it.id">

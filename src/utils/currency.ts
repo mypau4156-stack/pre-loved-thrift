@@ -1,8 +1,7 @@
-export const FREE_SHIPPING_THRESHOLD = 2900
-export const STANDARD_SHIPPING = 261
+export const SHIPPING_FEE = 50
 
-export function shippingFor(subtotal: number): number {
-  return subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING
+export function shippingFor(_subtotal: number): number {
+  return SHIPPING_FEE
 }
 
 export function formatPeso(amount: number): string {

@@ -64,7 +64,7 @@ function reply(q: string) {
     return 'Delivery riders can choose Delivery rider in the account sign-in window to access their assigned deliveries.'
   }
   if (/shipping|delivery fee|shipping fee/.test(s)) {
-    return 'Shipping is ₱261, and it’s free when your order subtotal is over ₱2,900.'
+    return 'Shipping is a flat ₱50 for every order.'
   }
   if (/payment|gcash|cash on delivery|\bcod\b|card/.test(s)) {
     return 'Checkout offers GCash and cash on delivery. For GCash, scan the shop QR and upload your receipt; the seller verifies the transfer manually. Card payments are demo-only and are not charged.'

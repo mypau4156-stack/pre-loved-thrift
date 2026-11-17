@@ -1,5 +1,5 @@
 <template>
-  <section class="hero">
+  <section id="top" class="hero">
     <div class="wrap">
       <div class="grid">
         <div class="copy">
@@ -40,7 +40,7 @@
       </div>
 
       <div class="benefits" aria-label="Shopping benefits">
-        <article><ion-icon :icon="cubeOutline" aria-hidden="true" /><div><b>Free shipping</b><span>On orders over ₱2,900</span></div></article>
+        <article><ion-icon :icon="cubeOutline" aria-hidden="true" /><div><b>Flat shipping</b><span>Only ₱50 per order</span></div></article>
         <article><ion-icon :icon="shieldCheckmarkOutline" aria-hidden="true" /><div><b>Quality checked</b><span>Every piece inspected</span></div></article>
         <article><ion-icon :icon="refreshOutline" aria-hidden="true" /><div><b>Easy returns</b><span>7-day return window</span></div></article>
         <article><ion-icon :icon="cardOutline" aria-hidden="true" /><div><b>Secure payment</b><span>GCash · Card · COD</span></div></article>

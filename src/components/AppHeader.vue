@@ -131,7 +131,7 @@
     </header>
 </template>
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { IonIcon } from "@ionic/vue";
 import {
     searchOutline,
@@ -185,8 +185,8 @@ const openDashboard = () => {
 const content = () =>
     document.querySelector("ion-content") as HTMLElement | null;
 function go(id: string) {
-    active.value = id;
     emit("navigate", id);
+    requestAnimationFrame(spy);
 }
 function spy() {
     if (!scroller) return;
@@ -213,8 +213,10 @@ function spy() {
     active.value = cur;
 }
 let scroller: HTMLElement | null = null;
-onMounted(() => {
+onMounted(async () => {
     try {
+        await nextTick();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         const c = content();
         scroller =
             c?.shadowRoot?.querySelector<HTMLElement>(".inner-scroll") ?? null;
